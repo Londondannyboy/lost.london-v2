@@ -110,15 +110,10 @@ class VICDeps:
 # =============================================================================
 
 agent = Agent(
-    'groq:llama-3.3-70b-versatile',
+    'google-gla:gemini-2.0-flash',
     deps_type=VICDeps,
-    result_type=VICResponse,
     system_prompt=VIC_SYSTEM_PROMPT,
     retries=2,
-    model_settings={
-        'temperature': 0.7,
-        'max_tokens': 400,
-    },
 )
 
 
@@ -391,7 +386,7 @@ USER QUESTION: {user_msg}
 Remember: ONLY use information from the source material above. Go into DEPTH (150-250 words)."""
 
             result = await agent.run(prompt, deps=deps)
-            response_text = result.data.response_text
+            response_text = result.output
 
         else:
             response_text = "I don't seem to have any articles about that in my collection. Would you like to explore something else? I've got stories about Thorney Island, the Royal Aquarium, Tyburn, and many other hidden corners of London."
