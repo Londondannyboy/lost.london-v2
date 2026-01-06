@@ -1,6 +1,7 @@
 "use client";
 
 import { Providers } from "@/components/providers";
+import { AuthHeader } from "@/components/auth-header";
 import { CopilotSidebar } from "@copilotkit/react-ui";
 import { useRenderToolCall, useCopilotChat } from "@copilotkit/react-core";
 import { Role, TextMessage } from "@copilotkit/runtime-client-gql";
@@ -65,7 +66,8 @@ function LostLondonContent() {
   });
 
   return (
-    <main className="flex min-h-screen">
+    <main className="flex min-h-screen relative">
+      <AuthHeader />
       {/* Main content area */}
       <div className="flex-1 flex flex-col">
         {/* Hero section */}
