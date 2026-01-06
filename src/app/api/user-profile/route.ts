@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { neon } from '@neondatabase/serverless';
-import { authServer } from '@/lib/auth/server';
+import { getAuthServer } from '@/lib/auth/server';
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -21,6 +21,7 @@ async function ensureTable() {
 
 export async function GET() {
   try {
+    const authServer = getAuthServer();
     if (!authServer) {
       return NextResponse.json({ error: 'Auth not configured' }, { status: 503 });
     }
@@ -55,6 +56,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const authServer = getAuthServer();
     if (!authServer) {
       return NextResponse.json({ error: 'Auth not configured' }, { status: 503 });
     }
