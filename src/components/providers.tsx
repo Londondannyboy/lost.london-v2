@@ -1,14 +1,20 @@
 "use client";
 
 import { CopilotKit } from "@copilotkit/react-core";
+import { NeonAuthUIProvider } from "@neondatabase/neon-js/auth/react/ui";
+import { authClient } from "@/lib/auth/client";
 import { ReactNode } from "react";
-
-const AGENT_URL = process.env.NEXT_PUBLIC_AGENT_URL || "http://localhost:8000/agui";
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
-    <CopilotKit runtimeUrl="/api/copilotkit" agent="vic_agent">
-      {children}
-    </CopilotKit>
+    <NeonAuthUIProvider
+      authClient={authClient}
+      redirectTo="/"
+      social={{ providers: ["google"] }}
+    >
+      <CopilotKit runtimeUrl="/api/copilotkit" agent="vic_agent">
+        {children}
+      </CopilotKit>
+    </NeonAuthUIProvider>
   );
 }
