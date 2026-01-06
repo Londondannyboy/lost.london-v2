@@ -1,7 +1,5 @@
 "use client";
 
-import { Providers } from "@/components/providers";
-import { AuthHeader } from "@/components/auth-header";
 import { CopilotSidebar } from "@copilotkit/react-ui";
 import { useRenderToolCall, useCopilotChat } from "@copilotkit/react-core";
 import { Role, TextMessage } from "@copilotkit/runtime-client-gql";
@@ -12,13 +10,33 @@ import { LocationMap } from "@/components/generative-ui/LocationMap";
 import { Timeline } from "@/components/generative-ui/Timeline";
 import { useCallback } from "react";
 
-function LostLondonContent() {
+function TopicCard({ title, description, prompt }: { title: string; description: string; prompt: string }) {
+  const { appendMessage } = useCopilotChat();
+
+  const handleClick = () => {
+    appendMessage(new TextMessage({ content: prompt, role: Role.User }));
+  };
+
+  return (
+    <button
+      onClick={handleClick}
+      className="text-left p-6 bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow border border-stone-200 hover:border-amber-300"
+    >
+      <h3 className="font-semibold text-lg text-stone-800 mb-2">{title}</h3>
+      <p className="text-stone-600 text-sm">{description}</p>
+      <span className="mt-3 inline-block text-amber-600 text-sm font-medium">
+        Ask VIC about this →
+      </span>
+    </button>
+  );
+}
+
+export default function Home() {
   const { appendMessage } = useCopilotChat();
 
   // Handle voice messages - forward to CopilotKit
   const handleVoiceMessage = useCallback((text: string, role?: "user" | "assistant") => {
     console.log(`[Voice -> CopilotKit] ${role}: ${text.slice(0, 50)}...`);
-    // Append to chat for context (voice transcripts go into the chat history)
     if (role === "user") {
       appendMessage(new TextMessage({ content: text, role: Role.User }));
     }
@@ -66,8 +84,7 @@ function LostLondonContent() {
   });
 
   return (
-    <main className="flex min-h-screen relative">
-      <AuthHeader />
+    <div className="flex min-h-screen">
       {/* Main content area */}
       <div className="flex-1 flex flex-col">
         {/* Hero section */}
@@ -154,35 +171,6 @@ function LostLondonContent() {
         }}
         className="border-l border-stone-200"
       />
-    </main>
-  );
-}
-
-function TopicCard({ title, description, prompt }: { title: string; description: string; prompt: string }) {
-  const { appendMessage } = useCopilotChat();
-
-  const handleClick = () => {
-    appendMessage(new TextMessage({ content: prompt, role: Role.User }));
-  };
-
-  return (
-    <button
-      onClick={handleClick}
-      className="text-left p-6 bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow border border-stone-200 hover:border-amber-300"
-    >
-      <h3 className="font-semibold text-lg text-stone-800 mb-2">{title}</h3>
-      <p className="text-stone-600 text-sm">{description}</p>
-      <span className="mt-3 inline-block text-amber-600 text-sm font-medium">
-        Ask VIC about this →
-      </span>
-    </button>
-  );
-}
-
-export default function Home() {
-  return (
-    <Providers>
-      <LostLondonContent />
-    </Providers>
+    </div>
   );
 }
