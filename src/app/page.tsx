@@ -34,15 +34,12 @@ function TopicCard({ title, description, prompt }: { title: string; description:
 export default function Home() {
   const { appendMessage } = useCopilotChat();
 
-  // Handle voice messages - forward to CopilotKit
   const handleVoiceMessage = useCallback((text: string, role?: "user" | "assistant") => {
-    console.log(`[Voice -> CopilotKit] ${role}: ${text.slice(0, 50)}...`);
     if (role === "user") {
       appendMessage(new TextMessage({ content: text, role: Role.User }));
     }
   }, [appendMessage]);
 
-  // Render tool calls as Generative UI components
   useRenderToolCall({
     name: "search_lost_london",
     render: ({ result }) => {
@@ -84,30 +81,52 @@ export default function Home() {
   });
 
   return (
-    <div className="flex min-h-screen">
-      {/* Main content area */}
-      <div className="flex-1 flex flex-col">
-        {/* Hero section */}
-        <div className="bg-gradient-to-br from-stone-800 to-stone-900 text-white p-8 md:p-16">
-          <div className="max-w-4xl">
-            <h1 className="text-4xl md:text-6xl font-bold mb-4">
-              Lost London
-            </h1>
-            <p className="text-xl md:text-2xl text-stone-300 mb-6">
-              Discover hidden history with VIC, your AI guide to 370+ stories about London's forgotten past.
-            </p>
-            <div className="flex items-center gap-4">
-              <VoiceInput onMessage={handleVoiceMessage} />
-              <span className="text-stone-400">
-                Click to talk to VIC, or use the chat sidebar →
-              </span>
+    <>
+      {/* Hero Section */}
+      <section className="relative min-h-[60vh] flex items-center justify-center bg-[#1a1612]">
+        <div className="absolute inset-0 z-0 bg-gradient-to-b from-stone-800 to-stone-900" />
+
+        <div className="relative z-10 max-w-4xl mx-auto px-4 py-16 text-center">
+          <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-4 text-[#f4ead5]">
+            Lost London
+          </h1>
+          <p className="text-xl md:text-2xl text-[#d4c4a8] mb-12 max-w-2xl mx-auto">
+            AI-powered voice guide to 370+ stories of hidden history
+          </p>
+
+          <div className="flex flex-col items-center gap-4">
+            <VoiceInput onMessage={handleVoiceMessage} />
+            <span className="text-stone-400 text-sm">
+              Click to talk to VIC, or use the chat sidebar
+            </span>
+          </div>
+        </div>
+      </section>
+
+      {/* Stats Bar */}
+      <section className="border-y border-gray-200 bg-gray-50">
+        <div className="max-w-6xl mx-auto px-4 py-8">
+          <div className="grid grid-cols-3 gap-8 text-center">
+            <div>
+              <p className="text-3xl md:text-4xl font-bold">370+</p>
+              <p className="text-sm text-gray-500 mt-1">Articles</p>
+            </div>
+            <div>
+              <p className="text-3xl md:text-4xl font-bold">2,000</p>
+              <p className="text-sm text-gray-500 mt-1">Years of History</p>
+            </div>
+            <div>
+              <p className="text-3xl md:text-4xl font-bold">56</p>
+              <p className="text-sm text-gray-500 mt-1">Book Chapters</p>
             </div>
           </div>
         </div>
+      </section>
 
-        {/* Featured topics */}
-        <div className="p-8 md:p-16 flex-1">
-          <h2 className="text-2xl font-bold text-stone-800 mb-6">
+      {/* Featured Topics */}
+      <section className="py-16">
+        <div className="max-w-6xl mx-auto px-4">
+          <h2 className="text-2xl font-bold text-stone-800 mb-8">
             Popular Topics
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -143,23 +162,7 @@ export default function Home() {
             />
           </div>
         </div>
-
-        {/* Footer */}
-        <footer className="bg-stone-100 p-6 text-center text-stone-500 text-sm">
-          <p>
-            Based on the work of{" "}
-            <a
-              href="https://lost.london"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-amber-600 hover:text-amber-700"
-            >
-              Vic Keegan
-            </a>
-            {" "}| Powered by CopilotKit + Pydantic AI
-          </p>
-        </footer>
-      </div>
+      </section>
 
       {/* CopilotKit Sidebar */}
       <CopilotSidebar
@@ -171,6 +174,6 @@ export default function Home() {
         }}
         className="border-l border-stone-200"
       />
-    </div>
+    </>
   );
 }
