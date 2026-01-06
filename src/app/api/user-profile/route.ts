@@ -2,10 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { neon } from '@neondatabase/serverless';
 import { getAuthServer } from '@/lib/auth/server';
 
-const sql = neon(process.env.DATABASE_URL!);
+// Lazy initialization - only connect at runtime, not build time
+function getSql() {
+  return neon(process.env.DATABASE_URL!);
+}
 
 // Ensure user_data table exists (runs once)
 async function ensureTable() {
+  const sql = getSql();
   await sql`
     CREATE TABLE IF NOT EXISTS user_data (
       id SERIAL PRIMARY KEY,
@@ -33,6 +37,7 @@ export async function GET() {
     const user = data.user;
     await ensureTable();
 
+    const sql = getSql();
     const [profile] = await sql`
       SELECT * FROM user_data WHERE user_id = ${user.id}
     `;
@@ -68,6 +73,7 @@ export async function POST(request: NextRequest) {
     const user = sessionData.user;
     await ensureTable();
 
+    const sql = getSql();
     const data = await request.json();
 
     const [profile] = await sql`
