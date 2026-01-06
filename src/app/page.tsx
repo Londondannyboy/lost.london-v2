@@ -3,13 +3,71 @@
 import { CopilotSidebar } from "@copilotkit/react-ui";
 import { useRenderToolCall, useCopilotChat } from "@copilotkit/react-core";
 import { Role, TextMessage } from "@copilotkit/runtime-client-gql";
-import { VoiceInput } from "@/components/voice-input";
+import { VoiceInput, ToolResult } from "@/components/voice-input";
 import { ArticleGrid } from "@/components/generative-ui/ArticleGrid";
 import { ArticleCard } from "@/components/generative-ui/ArticleCard";
 import { LocationMap } from "@/components/generative-ui/LocationMap";
 import { Timeline } from "@/components/generative-ui/Timeline";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import Link from "next/link";
+
+// Panel to show VIC's discoveries (articles, maps, etc.)
+function DiscoveryPanel({ discoveries }: { discoveries: ToolResult[] }) {
+  if (discoveries.length === 0) return null;
+
+  return (
+    <div className="fixed bottom-4 right-4 w-96 max-h-[60vh] overflow-y-auto bg-white rounded-lg shadow-2xl border border-gray-200 z-40">
+      <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3">
+        <h3 className="font-bold text-gray-800">VIC's Discoveries</h3>
+        <p className="text-xs text-gray-500">Related to what VIC is discussing</p>
+      </div>
+      <div className="p-4 space-y-4">
+        {discoveries.map((discovery, i) => (
+          <div key={i} className="animate-in fade-in slide-in-from-right duration-300">
+            {discovery.type === 'articles' && discovery.data.articles && (
+              <div>
+                <p className="text-xs text-gray-500 mb-2">Found {discovery.data.articles.length} articles about "{discovery.data.query}"</p>
+                <div className="space-y-2">
+                  {discovery.data.articles.slice(0, 3).map((article: any, j: number) => (
+                    <a
+                      key={j}
+                      href={`/article/${article.slug || article.id}`}
+                      className="block p-3 bg-gray-50 rounded border border-gray-100 hover:border-amber-300 hover:bg-amber-50 transition-all"
+                    >
+                      <h4 className="font-medium text-sm text-gray-800 line-clamp-1">{article.title}</h4>
+                      {article.excerpt && (
+                        <p className="text-xs text-gray-500 mt-1 line-clamp-2">{article.excerpt}</p>
+                      )}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+            {discovery.type === 'map' && (
+              <div className="bg-gray-50 rounded p-3">
+                <p className="text-xs text-gray-500 mb-2">Location mentioned</p>
+                <div className="aspect-video bg-gray-200 rounded overflow-hidden">
+                  <iframe
+                    src={`https://www.openstreetmap.org/export/embed.html?bbox=-0.2%2C51.45%2C0.1%2C51.55&layer=mapnik&marker=51.5%2C-0.1`}
+                    className="w-full h-full border-0"
+                    title={`Map of ${discovery.data.location}`}
+                  />
+                </div>
+                <p className="text-sm font-medium mt-2 text-gray-700">{discovery.data.location}</p>
+              </div>
+            )}
+            {discovery.type === 'timeline' && (
+              <div className="bg-gray-50 rounded p-3">
+                <p className="text-xs text-gray-500 mb-2">{discovery.data.era} Era</p>
+                <div className="text-sm text-gray-700">Timeline of {discovery.data.era} events</div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function TopicButton({ topic, onClick }: { topic: string; onClick: (topic: string) => void }) {
   return (
@@ -24,17 +82,25 @@ function TopicButton({ topic, onClick }: { topic: string; onClick: (topic: strin
 
 export default function Home() {
   const { appendMessage } = useCopilotChat();
+  const [discoveries, setDiscoveries] = useState<ToolResult[]>([]);
+  const [transcript, setTranscript] = useState<{ role: string; text: string }[]>([]);
 
+  // Handle voice messages - add to transcript
   const handleVoiceMessage = useCallback((text: string, role?: "user" | "assistant") => {
-    if (role === "user") {
-      appendMessage(new TextMessage({ content: text, role: Role.User }));
-    }
-  }, [appendMessage]);
+    setTranscript(prev => [...prev.slice(-10), { role: role || 'user', text }]);
+  }, []);
+
+  // Handle tool results from voice - show in discovery panel
+  const handleToolResult = useCallback((result: ToolResult) => {
+    console.log('[Page] Tool result received:', result);
+    setDiscoveries(prev => [result, ...prev.slice(0, 4)]); // Keep last 5
+  }, []);
 
   const handleTopicClick = useCallback((topic: string) => {
     appendMessage(new TextMessage({ content: `Tell me about ${topic}`, role: Role.User }));
   }, [appendMessage]);
 
+  // CopilotKit tool renderers (for text chat sidebar)
   useRenderToolCall({
     name: "search_lost_london",
     render: ({ result }) => {
@@ -106,12 +172,22 @@ export default function Home() {
               </div>
             </div>
 
-            <VoiceInput onMessage={handleVoiceMessage} />
-
-            <p className="text-[#d4c4a8] text-sm mt-4">
-              Click to speak, or use the chat sidebar
-            </p>
+            <VoiceInput onMessage={handleVoiceMessage} onToolResult={handleToolResult} />
           </div>
+
+          {/* Live Transcript - shows current conversation */}
+          {transcript.length > 0 && (
+            <div className="max-w-xl mx-auto mb-8 bg-black/30 backdrop-blur rounded-lg p-4 text-left">
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {transcript.slice(-4).map((msg, i) => (
+                  <div key={i} className={`text-sm ${msg.role === 'user' ? 'text-[#d4c4a8]' : 'text-white'}`}>
+                    <span className="font-medium">{msg.role === 'user' ? 'You: ' : 'VIC: '}</span>
+                    <span className="opacity-90">{msg.text.slice(0, 150)}{msg.text.length > 150 ? '...' : ''}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Topic Pills */}
           <div className="text-center w-full max-w-lg mx-auto">
@@ -182,141 +258,37 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Browse by Series */}
-      <section className="py-16 border-b border-gray-200 bg-gray-50">
-        <div className="max-w-6xl mx-auto px-4">
-          <div className="flex justify-between items-center mb-8">
-            <h2 className="text-2xl font-bold">Browse by Series</h2>
-          </div>
-          <div className="grid md:grid-cols-4 gap-6">
-            <button
-              onClick={() => handleTopicClick('Lost London stories')}
-              className="bg-white border border-gray-200 p-6 hover:border-black hover:shadow-md transition-all group text-left cursor-pointer"
-            >
-              <h3 className="font-bold text-lg mb-2 group-hover:underline">Lost London</h3>
-              <p className="text-sm text-gray-500 mb-3">232 articles</p>
-              <p className="text-sm text-gray-600">The complete Vic Keegan archive of hidden London stories.</p>
-            </button>
-            <button
-              onClick={() => handleTopicClick("Shakespeare's London")}
-              className="bg-white border border-gray-200 p-6 hover:border-black hover:shadow-md transition-all group text-left cursor-pointer"
-            >
-              <h3 className="font-bold text-lg mb-2 group-hover:underline">Shakespeare's London</h3>
-              <p className="text-sm text-gray-500 mb-3">9 articles</p>
-              <p className="text-sm text-gray-600">Theatres, taverns, and tales from the Bard's city.</p>
-            </button>
-            <button
-              onClick={() => handleTopicClick('River Thames history')}
-              className="bg-white border border-gray-200 p-6 hover:border-black hover:shadow-md transition-all group text-left cursor-pointer"
-            >
-              <h3 className="font-bold text-lg mb-2 group-hover:underline">River Thames</h3>
-              <p className="text-sm text-gray-500 mb-3">7 articles</p>
-              <p className="text-sm text-gray-600">London's artery through the ages.</p>
-            </button>
-            <button
-              onClick={() => handleTopicClick('Hidden Rivers of London')}
-              className="bg-white border border-gray-200 p-6 hover:border-black hover:shadow-md transition-all group text-left cursor-pointer"
-            >
-              <h3 className="font-bold text-lg mb-2 group-hover:underline">Hidden Rivers</h3>
-              <p className="text-sm text-gray-500 mb-3">5 articles</p>
-              <p className="text-sm text-gray-600">The buried waterways beneath London's streets.</p>
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {/* Popular Topics Grid */}
-      <section className="py-16 border-b border-gray-200">
-        <div className="max-w-6xl mx-auto px-4">
-          <div className="flex justify-between items-center mb-8">
-            <h2 className="text-2xl font-bold">Popular Topics</h2>
-          </div>
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[
-              { title: 'The Royal Aquarium', desc: 'A Victorian entertainment palace in Westminster with trapeze artists and a rollercoaster.' },
-              { title: 'Tyburn', desc: "London's most notorious execution site, where crowds gathered for 600 years." },
-              { title: 'Crystal Palace', desc: 'The magnificent glass structure from the Great Exhibition of 1851.' },
-              { title: 'Fleet Street', desc: 'The birthplace of British journalism for over 400 years.' },
-              { title: "Devil's Acre", desc: 'A notorious Victorian slum in the shadow of Westminster Abbey.' },
-              { title: 'Roman London', desc: 'Londinium: the ancient walled city founded by the Romans in 43 AD.' },
-            ].map((topic) => (
-              <button
-                key={topic.title}
-                onClick={() => handleTopicClick(topic.title)}
-                className="group bg-white border border-gray-200 p-6 hover:border-black hover:shadow-md transition-all text-left cursor-pointer"
-              >
-                <h3 className="font-bold text-lg mb-2 group-hover:underline">{topic.title}</h3>
-                <p className="text-sm text-gray-600 mb-3">{topic.desc}</p>
-                <span className="text-sm text-amber-600 font-medium">Ask VIC about this →</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* Books Grid */}
       <section className="py-16 border-b border-gray-200 bg-gradient-to-b from-amber-50 to-white">
         <div className="max-w-5xl mx-auto px-4">
           <div className="text-center mb-10">
             <h2 className="text-3xl font-bold mb-3">Own the Books</h2>
             <p className="text-gray-600 max-w-xl mx-auto">
-              Take London's hidden history home. Vic Keegan's Lost London series is available at Waterstones and IngramSpark.
+              Take London's hidden history home. Vic Keegan's Lost London series is available at Waterstones.
             </p>
           </div>
           <div className="grid md:grid-cols-3 gap-8 mb-10">
-            <a
-              href="https://www.waterstones.com/author/vic-keegan/4942784"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="group"
-            >
+            <a href="https://www.waterstones.com/author/vic-keegan/4942784" target="_blank" rel="noopener noreferrer" className="group">
               <div className="aspect-[3/4] overflow-hidden bg-gray-100 mb-3 rounded-lg shadow-lg group-hover:shadow-xl transition-shadow">
-                <img
-                  src="/lost-london-cover-1.jpg"
-                  alt="Lost London Volume 1"
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                />
+                <img src="/lost-london-cover-1.jpg" alt="Lost London Volume 1" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
               </div>
               <p className="text-sm font-medium group-hover:underline">Volume 1</p>
             </a>
-            <a
-              href="https://www.waterstones.com/author/vic-keegan/4942784"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="group"
-            >
+            <a href="https://www.waterstones.com/author/vic-keegan/4942784" target="_blank" rel="noopener noreferrer" className="group">
               <div className="aspect-[3/4] overflow-hidden bg-gray-100 mb-3 rounded-lg shadow-lg group-hover:shadow-xl transition-shadow">
-                <img
-                  src="/lost-london-cover-2.jpg"
-                  alt="Lost London Volume 2"
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                />
+                <img src="/lost-london-cover-2.jpg" alt="Lost London Volume 2" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
               </div>
               <p className="text-sm font-medium group-hover:underline">Volume 2</p>
             </a>
-            <a
-              href="https://shop.ingramspark.com/b/084?params=NwS1eOq0iGczj35Zm0gAawIEcssFFDCeMABwVB9c3gn"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="group"
-            >
+            <a href="https://shop.ingramspark.com/b/084?params=NwS1eOq0iGczj35Zm0gAawIEcssFFDCeMABwVB9c3gn" target="_blank" rel="noopener noreferrer" className="group">
               <div className="aspect-[3/4] overflow-hidden bg-gray-100 mb-3 rounded-lg shadow-lg group-hover:shadow-xl transition-shadow">
-                <img
-                  src="/Thorney London's Forgotten book cover.jpg"
-                  alt="Thorney: London's Forgotten Island"
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                />
+                <img src="/Thorney London's Forgotten book cover.jpg" alt="Thorney" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
               </div>
               <p className="text-sm font-medium group-hover:underline">Thorney</p>
             </a>
           </div>
           <div className="text-center">
-            <a
-              href="https://www.waterstones.com/author/vic-keegan/4942784"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-3 bg-amber-900 text-white px-8 py-4 rounded-lg hover:bg-amber-800 transition-colors font-bold text-lg"
-            >
+            <a href="https://www.waterstones.com/author/vic-keegan/4942784" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-3 bg-amber-900 text-white px-8 py-4 rounded-lg hover:bg-amber-800 transition-colors font-bold text-lg">
               <span>Buy at Waterstones</span>
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
@@ -342,13 +314,16 @@ export default function Home() {
         </div>
       </section>
 
-      {/* CopilotKit Sidebar */}
+      {/* VIC's Discoveries Panel - shows articles/maps from voice conversation */}
+      <DiscoveryPanel discoveries={discoveries} />
+
+      {/* CopilotKit Sidebar - for text chat fallback */}
       <CopilotSidebar
         defaultOpen={false}
         instructions="You are VIC, a warm London historian. Help users explore London's hidden history."
         labels={{
-          title: "Talk to VIC",
-          initial: "Hello! I'm Vic Keegan, and I've spent years uncovering London's hidden stories. What would you like to explore?",
+          title: "Chat with VIC",
+          initial: "Prefer typing? I'm here to help you explore London's hidden stories.",
         }}
         className="border-l border-stone-200"
       />
