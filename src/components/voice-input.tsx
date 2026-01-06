@@ -3,22 +3,15 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { VoiceProvider, useVoice } from "@humeai/voice-react";
 
-interface ToolResult {
-  type: "article" | "articles" | "map" | "timeline";
-  data: any;
-}
-
 interface VoiceButtonProps {
   onMessage: (text: string, role?: "user" | "assistant") => void;
-  onToolResult?: (result: ToolResult) => void;
 }
 
-function VoiceButton({ onMessage, onToolResult }: VoiceButtonProps) {
-  const { connect, disconnect, status, messages, sendUserInput, sendToolMessage } = useVoice();
+function VoiceButton({ onMessage }: VoiceButtonProps) {
+  const { connect, disconnect, status, messages, sendUserInput } = useVoice();
   const [isPending, setIsPending] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const lastSentMsgId = useRef<string | null>(null);
-  const processedToolCalls = useRef<Set<string>>(new Set());
 
   // Track if VIC is speaking
   useEffect(() => {
@@ -26,11 +19,11 @@ function VoiceButton({ onMessage, onToolResult }: VoiceButtonProps) {
       m.type === "assistant_message" || m.type === "assistant_end"
     );
     const lastPlayback = playbackMsgs[playbackMsgs.length - 1];
-    // VIC is speaking if last message is assistant_message (not assistant_end)
     setIsPlaying(lastPlayback?.type === "assistant_message");
   }, [messages]);
 
-  // Forward conversation messages to parent
+  // Forward conversation messages to parent (which sends to CopilotKit)
+  // This is the key integration: Voice → onMessage → appendMessage → Pydantic AI
   useEffect(() => {
     const conversationMsgs = messages.filter(
       (m: any) => (m.type === "user_message" || m.type === "assistant_message") && m.message?.content
@@ -44,113 +37,17 @@ function VoiceButton({ onMessage, onToolResult }: VoiceButtonProps) {
         const isUser = lastMsg.type === "user_message";
         console.log(`[VIC Voice] ${isUser ? 'User' : 'VIC'}:`, lastMsg.message.content.slice(0, 80));
         lastSentMsgId.current = msgId;
+        // Forward FULL content to CopilotKit with role indicator
         onMessage(lastMsg.message.content, isUser ? "user" : "assistant");
       }
     }
   }, [messages, onMessage]);
-
-  // Handle Hume tool calls - this is where we get search results etc.
-  useEffect(() => {
-    const lastMessage = messages[messages.length - 1] as any;
-    if (!lastMessage) return;
-
-    // Check for tool_call
-    const isToolCall = lastMessage.type === 'tool_call' ||
-                       lastMessage.type === 'tool_call_message' ||
-                       lastMessage.tool_call_id;
-
-    if (!isToolCall) return;
-
-    const toolCallId = lastMessage.toolCallId || lastMessage.tool_call_id;
-    if (!toolCallId || processedToolCalls.current.has(toolCallId)) return;
-
-    processedToolCalls.current.add(toolCallId);
-    console.log('[VIC Voice] Tool call received:', lastMessage);
-
-    const handleToolCall = async () => {
-      const name = lastMessage.name || lastMessage.tool_name || lastMessage.function?.name;
-      const parameters = lastMessage.parameters || lastMessage.function?.arguments;
-
-      let args: Record<string, any> = {};
-      try {
-        args = typeof parameters === 'string' ? JSON.parse(parameters) : (parameters || {});
-      } catch (e) {
-        console.error('[VIC Voice] Failed to parse tool parameters:', parameters);
-      }
-
-      console.log('[VIC Voice] Processing tool:', name, 'with args:', args);
-
-      try {
-        let result: any;
-
-        switch (name) {
-          case 'search_knowledge':
-          case 'search_lost_london':
-            // Call our backend search API
-            const searchRes = await fetch('/api/search', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ query: args.query, limit: 5 }),
-            });
-            result = await searchRes.json();
-
-            // Forward to CopilotKit UI
-            if (result.articles && onToolResult) {
-              onToolResult({
-                type: 'articles',
-                data: { articles: result.articles, query: args.query }
-              });
-            }
-            break;
-
-          case 'show_map':
-          case 'get_location':
-            // Return location data for UI
-            result = { found: true, location: args.location_name };
-            if (onToolResult) {
-              onToolResult({ type: 'map', data: { location: args.location_name } });
-            }
-            break;
-
-          case 'show_timeline':
-            result = { found: true, era: args.era };
-            if (onToolResult) {
-              onToolResult({ type: 'timeline', data: { era: args.era } });
-            }
-            break;
-
-          default:
-            console.warn('[VIC Voice] Unknown tool:', name);
-            result = { error: `Unknown tool: ${name}` };
-        }
-
-        // Send result back to Hume
-        sendToolMessage({
-          type: 'tool_response',
-          toolCallId: toolCallId,
-          content: JSON.stringify(result),
-        });
-
-      } catch (error) {
-        console.error('[VIC Voice] Tool error:', error);
-        sendToolMessage({
-          type: 'tool_error',
-          toolCallId: toolCallId,
-          error: 'Tool execution failed',
-          content: '',
-        });
-      }
-    };
-
-    handleToolCall();
-  }, [messages, sendToolMessage, onToolResult]);
 
   const handleToggle = useCallback(async () => {
     if (status.value === "connected") {
       disconnect();
     } else {
       setIsPending(true);
-      processedToolCalls.current.clear();
 
       try {
         const res = await fetch("/api/hume-token");
@@ -238,10 +135,8 @@ function VoiceButton({ onMessage, onToolResult }: VoiceButtonProps) {
 
 export function VoiceInput({
   onMessage,
-  onToolResult
 }: {
   onMessage: (text: string, role?: "user" | "assistant") => void;
-  onToolResult?: (result: ToolResult) => void;
 }) {
   return (
     <VoiceProvider
@@ -249,9 +144,7 @@ export function VoiceInput({
       onOpen={() => console.log("[VIC Voice] Connected")}
       onClose={(e) => console.log("[VIC Voice] Closed:", e)}
     >
-      <VoiceButton onMessage={onMessage} onToolResult={onToolResult} />
+      <VoiceButton onMessage={onMessage} />
     </VoiceProvider>
   );
 }
-
-export type { ToolResult };
