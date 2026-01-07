@@ -1704,6 +1704,12 @@ In this chat, keep it SHORT:
                 era = extract_era_from_content(article.content)
                 img_url = article.hero_image_url
 
+                # Unsplash fallback for articles without images
+                if not img_url:
+                    title_keywords = article.title.lower().replace("vic keegan's lost london", "").strip()
+                    title_keywords = title_keywords.replace(":", "").replace(" ", ",")[:50]
+                    img_url = f"https://source.unsplash.com/800x600/?london,{title_keywords},historic"
+
                 article_cards.append({
                     "id": article.id,
                     "title": article.title,
@@ -1718,6 +1724,13 @@ In this chat, keep it SHORT:
             hero_image = top_article.hero_image_url
             if not hero_image:
                 hero_image = await get_topic_image(topic)
+
+            # Unsplash fallback if still no image
+            if not hero_image:
+                # Use Unsplash Source API for contextual London images
+                safe_topic = topic.lower().replace(" ", ",").replace("'", "")
+                hero_image = f"https://source.unsplash.com/1600x900/?london,{safe_topic},historic"
+                logger.info(f"[VIC CopilotKit] Using Unsplash fallback for: {topic}")
 
             # Extract location and era from top article
             location = extract_location_from_content(top_article.content, top_article.title)

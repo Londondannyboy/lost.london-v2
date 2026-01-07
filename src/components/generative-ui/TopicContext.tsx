@@ -71,27 +71,37 @@ export function TopicContext({
 
   return (
     <div className="space-y-3">
-      {/* Hero image - compact with query as overlay */}
+      {/* Hero image - stunning full-width with overlay */}
       {hero_image && (
-        <div className="relative rounded-lg overflow-hidden">
+        <div className="relative rounded-xl overflow-hidden shadow-lg">
           <img
             src={hero_image}
             alt={query}
-            className="w-full h-32 object-cover"
+            className="w-full h-44 object-cover"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
-          <div className="absolute bottom-2 left-3 right-3">
-            <h3 className="text-white font-semibold text-sm">{query}</h3>
-            {brief && <p className="text-white/80 text-xs line-clamp-1">{brief}</p>}
+          {/* Multi-layer gradient for depth */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,transparent_0%,rgba(0,0,0,0.2)_100%)]" />
+
+          {/* Content overlay */}
+          <div className="absolute bottom-0 left-0 right-0 p-4">
+            <h3 className="text-white font-bold text-xl drop-shadow-lg mb-1">{query}</h3>
+            {brief && <p className="text-white/90 text-sm line-clamp-2 drop-shadow">{brief}</p>}
+            {era && (
+              <span className="inline-block mt-2 px-2 py-0.5 bg-amber-500/90 text-white text-xs font-medium rounded-full">
+                {era}
+              </span>
+            )}
           </div>
         </div>
       )}
 
       {/* Brief summary - only show if no hero image */}
       {!hero_image && brief && (
-        <p className="text-sm text-stone-600 bg-stone-50 rounded-lg p-3">
-          {brief}
-        </p>
+        <div className="bg-gradient-to-r from-amber-50 to-stone-50 rounded-xl p-4 border border-amber-100">
+          <h3 className="font-semibold text-stone-800 mb-1">{query}</h3>
+          <p className="text-sm text-stone-600">{brief}</p>
+        </div>
       )}
 
       {/* Tab navigation if we have multiple content types */}
@@ -117,7 +127,7 @@ export function TopicContext({
       <div>
         {/* Articles */}
         {activeTab === "articles" && hasArticles && (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {articles.map((article, index) => (
               <ArticleCard
                 key={article.id}
