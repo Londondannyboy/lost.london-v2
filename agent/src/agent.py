@@ -1258,7 +1258,7 @@ Use their name occasionally in conversation (not every message).
         }
 
     # Create AG-UI app with StateDeps
-    agui_app = copilotkit_agent.to_ag_ui(deps=StateDeps(VICAgentState()), name="vic_agent")
+    agui_app = copilotkit_agent.to_ag_ui(deps=StateDeps(VICAgentState()))
     app.mount("/agui", agui_app)
     logger.info("CopilotKit AG-UI endpoint ready with StateDeps")
 else:

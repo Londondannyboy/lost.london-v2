@@ -108,8 +108,9 @@ export default function Home() {
   const userName = userProfile.preferred_name || user?.name?.split(' ')[0] || user?.name;
 
   // Sync user context with backend agent via useCoAgent
+  // Note: for pydantic-ai AG-UI, the name matches the default agent name
   const { setState: setAgentState } = useCoAgent<VICAgentState>({
-    name: "vic_agent",
+    name: "agent",  // Default name for pydantic-ai AG-UI
     initialState: {
       user_id: user?.id || null,
       user_name: userName || null,
