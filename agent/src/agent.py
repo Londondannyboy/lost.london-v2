@@ -1280,9 +1280,10 @@ if STATEDEPS_AVAILABLE:
 | "What have I asked about?" | get_conversation_history |
 | "What did we discuss?" | get_conversation_history |
 | "Do you remember...?" | get_conversation_history |
-| Any London history topic | search_lost_london |
+| Any London history topic | delegate_to_librarian |
 
 CRITICAL RULES:
+- ALWAYS use delegate_to_librarian for ANY topic search - this shows the Librarian avatar
 - When user asks about personal info, ALWAYS call the appropriate tool first
 - NEVER say "I don't have access to personal information" - use the tools instead
 - If a tool returns data, use it in your response
