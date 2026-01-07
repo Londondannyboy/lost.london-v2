@@ -1,6 +1,7 @@
 "use client";
 
 import { ArticleCard } from "./ArticleCard";
+import { LibrarianAvatar } from "../LibrarianAvatar";
 
 interface Article {
   id: string;
@@ -20,9 +21,10 @@ interface Article {
 interface ArticleGridProps {
   articles: Article[];
   query?: string;
+  brief?: string;
 }
 
-export function ArticleGrid({ articles, query }: ArticleGridProps) {
+export function ArticleGrid({ articles, query, brief }: ArticleGridProps) {
   if (!articles || articles.length === 0) {
     return (
       <div className="p-4 bg-stone-100 rounded-lg text-stone-600 text-center">
@@ -32,14 +34,30 @@ export function ArticleGrid({ articles, query }: ArticleGridProps) {
   }
 
   return (
-    <div className="space-y-4">
-      {query && (
-        <div className="text-sm text-stone-500 mb-2">
-          Found {articles.length} article{articles.length !== 1 ? 's' : ''} about "{query}"
+    <div className="space-y-4 my-4">
+      {/* Librarian header */}
+      <div className="flex items-center gap-3">
+        <LibrarianAvatar speaking size="sm" showLabel />
+        <div className="flex-1">
+          {query && (
+            <span className="text-sm text-amber-600 flex items-center gap-2">
+              <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
+              Found {articles.length} article{articles.length !== 1 ? 's' : ''} about "{query}"
+            </span>
+          )}
         </div>
+      </div>
+
+      {/* Brief from Librarian */}
+      {brief && (
+        <p className="text-sm text-stone-600 italic pl-10 border-l-2 border-amber-200">
+          {brief}
+        </p>
       )}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {articles.map((article) => (
+
+      {/* Article cards - stack vertically for better readability in chat */}
+      <div className="space-y-4 pl-10">
+        {articles.map((article, index) => (
           <ArticleCard
             key={article.id}
             id={article.id}
@@ -48,6 +66,9 @@ export function ArticleGrid({ articles, query }: ArticleGridProps) {
             hero_image_url={article.hero_image_url}
             slug={article.id}
             score={article.score}
+            location={article.location?.name}
+            date_range={article.era || undefined}
+            index={index}
           />
         ))}
       </div>

@@ -10,7 +10,7 @@ import { LocationMap } from "@/components/generative-ui/LocationMap";
 import { Timeline } from "@/components/generative-ui/Timeline";
 import { BookDisplay } from "@/components/generative-ui/BookDisplay";
 import { LibrarianMessage, LibrarianThinking } from "@/components/LibrarianAvatar";
-import { CustomUserMessage, CustomAssistantMessage } from "@/components/ChatMessages";
+import { CustomUserMessage, CustomAssistantMessage, ChatUserContext } from "@/components/ChatMessages";
 import { useCallback, useEffect, useState } from "react";
 import { authClient } from "@/lib/auth/client";
 
@@ -376,19 +376,26 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
     }
   })();
 
+  // User context for custom chat components
+  const chatUserContextValue = {
+    userName: userName || user?.name?.split(' ')[0] || 'You',
+    userImage: (user as any)?.image || undefined,
+  };
+
   return (
-    <CopilotSidebar
-      defaultOpen={true}
-      clickOutsideToClose={false}
-      instructions={instructions}
-      labels={{
-        title: "VIC - London Historian",
-        initial: initialMessage,
-      }}
-      className="border-l border-stone-200"
-      UserMessage={CustomUserMessage}
-      AssistantMessage={CustomAssistantMessage}
-    >
+    <ChatUserContext.Provider value={chatUserContextValue}>
+      <CopilotSidebar
+        defaultOpen={true}
+        clickOutsideToClose={false}
+        instructions={instructions}
+        labels={{
+          title: "VIC - London Historian",
+          initial: initialMessage,
+        }}
+        className="border-l border-stone-200"
+        UserMessage={CustomUserMessage}
+        AssistantMessage={CustomAssistantMessage}
+      >
       {/* Main Content - Voice-First Hero */}
       <div className="bg-white text-black min-h-screen">
         {/* Hero Section */}
@@ -546,6 +553,7 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
           </div>
         </section>
       </div>
-    </CopilotSidebar>
+      </CopilotSidebar>
+    </ChatUserContext.Provider>
   );
 }
