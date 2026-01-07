@@ -1495,108 +1495,114 @@ In this chat, keep it SHORT:
         }
 
     @copilotkit_agent.tool
-    async def delegate_to_librarian(ctx: RunContext[StateDeps[VICAgentState]], request: str) -> dict:
+    async def delegate_to_librarian(ctx: RunContext[StateDeps[VICAgentState]], topic: str) -> dict:
         """
-        Delegate to the London Librarian for visual research materials.
+        Search for articles, maps, and timelines about a London history topic.
 
-        Use this when you need to surface articles, maps, timelines, or books.
-        The Librarian will find the materials and return UI components to display.
-
-        WHEN TO DELEGATE:
-        - User asks "show me" or "where is" something
-        - User mentions a specific place, era, or topic to explore
-        - You need to find articles to support your storytelling
-        - User asks about VIC's books
-
-        AFTER DELEGATION:
-        - For major searches, acknowledge: "Let me check my archives..." BEFORE delegating
-        - For follow-up queries, delegate silently
-        - The Librarian's UI will appear separately in the chat
+        Use this when users ask about places, topics, or want visual content.
 
         Args:
-            request: What to ask the Librarian to find (e.g., "articles about Thorney Island")
+            topic: The topic to search for (e.g., "Thorney Island", "Royal Aquarium")
         """
-        logger.info(f"[VIC CopilotKit] Delegating to Librarian: {request}")
-
-        # Get user context from state
-        state = ctx.deps.state
-        user = state.user
-
-        # Create LibrarianDeps from context
-        librarian_deps = LibrarianDeps(
-            user_id=user.id if user else None,
-            user_name=user.name if user else None,
-            current_topic=request,
-            user_facts=[],
-        )
+        logger.info(f"[VIC CopilotKit] Searching for topic: {topic}")
 
         try:
-            # Run the Librarian agent
-            result = await librarian_agent.run(request, deps=librarian_deps)
+            # Import here to avoid circular imports
+            from .tools import search_articles, extract_location_from_content, extract_era_from_content
+            from .database import get_topic_image
 
-            # Extract the response text
-            response_text = result.output if hasattr(result, 'output') else ""
+            # Search for articles
+            results = await search_articles(topic, limit=5)
 
-            # Get UI data from tool results
-            # Try multiple ways to find the tool return data
-            ui_data = None
-            ui_component = None
+            if not results.articles:
+                return {
+                    "speaker": "librarian",
+                    "found": False,
+                    "content": f"I couldn't find anything about {topic} in my archives.",
+                    "ui_component": None,
+                    "ui_data": None,
+                }
 
-            # Method 1: Check result.data directly
-            if hasattr(result, 'data') and isinstance(result.data, dict):
-                if 'ui_component' in result.data:
-                    ui_data = result.data
-                    ui_component = result.data.get('ui_component')
-                    logger.info(f"[VIC CopilotKit] Found UI data in result.data")
+            # Build article cards
+            article_cards = []
+            top_article = results.articles[0]
 
-            # Method 2: Search through all messages for tool return parts
-            if not ui_data and hasattr(result, 'all_messages'):
-                for msg in result.all_messages():
-                    if ui_data:
+            for article in results.articles[:3]:
+                location = extract_location_from_content(article.content, article.title)
+                era = extract_era_from_content(article.content)
+                img_url = article.hero_image_url
+
+                article_cards.append({
+                    "id": article.id,
+                    "title": article.title,
+                    "excerpt": article.content[:200] + "...",
+                    "hero_image_url": img_url,
+                    "score": article.score,
+                    "location": location.model_dump() if location else None,
+                    "era": era,
+                })
+
+            # Get hero image - from top article or fallback to topic_images
+            hero_image = top_article.hero_image_url
+            if not hero_image:
+                hero_image = await get_topic_image(topic)
+
+            # Extract location and era from top article
+            location = extract_location_from_content(top_article.content, top_article.title)
+            era = extract_era_from_content(top_article.content)
+
+            # Build timeline if we have an era
+            timeline_events = None
+            if era:
+                era_lower = era.lower()
+                TIMELINES = {
+                    "victorian": [
+                        {"year": 1837, "title": "Queen Victoria's Coronation", "description": "Beginning of the Victorian era"},
+                        {"year": 1851, "title": "Great Exhibition", "description": "Crystal Palace opens in Hyde Park"},
+                        {"year": 1863, "title": "First Underground", "description": "Metropolitan Railway opens"},
+                        {"year": 1876, "title": "Royal Aquarium Opens", "description": "Entertainment venue in Westminster"},
+                        {"year": 1901, "title": "End of Era", "description": "Death of Queen Victoria"},
+                    ],
+                    "georgian": [
+                        {"year": 1714, "title": "George I", "description": "House of Hanover begins"},
+                        {"year": 1750, "title": "Westminster Bridge", "description": "Second Thames crossing opens"},
+                        {"year": 1830, "title": "End of Era", "description": "Death of George IV"},
+                    ],
+                }
+                for key, events in TIMELINES.items():
+                    if key in era_lower:
+                        timeline_events = events
                         break
-                    if hasattr(msg, 'parts'):
-                        for part in msg.parts:
-                            # Check for ToolReturnPart
-                            part_type = type(part).__name__
-                            logger.info(f"[VIC CopilotKit] Checking part type: {part_type}")
-
-                            # Get content from part
-                            part_content = getattr(part, 'content', None)
-
-                            # Log what we found
-                            if part_content:
-                                logger.info(f"[VIC CopilotKit] Part content type: {type(part_content).__name__}, has ui_component: {'ui_component' in part_content if isinstance(part_content, dict) else 'N/A'}")
-
-                            if isinstance(part_content, dict) and 'ui_component' in part_content:
-                                ui_data = part_content
-                                ui_component = part_content.get('ui_component')
-                                logger.info(f"[VIC CopilotKit] Found Librarian UI data!")
-                                break
 
             # Log what we found
-            if ui_data:
-                articles = ui_data.get('articles', [])
-                has_images = sum(1 for a in articles if a.get('hero_image_url'))
-                hero_img = ui_data.get('hero_image')
-                logger.info(f"[VIC CopilotKit] Librarian returned: ui_component={ui_component}, articles={len(articles)}, with_images={has_images}, hero_image={'YES: ' + hero_img[:50] if hero_img else 'NO'}")
-            else:
-                logger.warning(f"[VIC CopilotKit] No UI data found from Librarian! Dumping result structure...")
-                logger.warning(f"[VIC CopilotKit] result type: {type(result).__name__}")
-                logger.warning(f"[VIC CopilotKit] result attrs: {[a for a in dir(result) if not a.startswith('_')]}")
+            articles_with_images = sum(1 for a in article_cards if a.get("hero_image_url"))
+            logger.info(f"[VIC CopilotKit] Found {len(article_cards)} articles, {articles_with_images} with images, hero_image: {'YES' if hero_image else 'NO'}")
+
+            # Build UI data
+            ui_data = {
+                "found": True,
+                "query": topic,
+                "articles": article_cards,
+                "hero_image": hero_image,
+                "location": location.model_dump() if location else None,
+                "era": era,
+                "timeline_events": timeline_events,
+                "brief": f"I found {len(article_cards)} articles about {topic}." + (f" {articles_with_images} include historic images." if articles_with_images > 0 else ""),
+            }
 
             return {
                 "speaker": "librarian",
-                "content": response_text,
-                "ui_component": ui_component,
+                "content": ui_data["brief"],
+                "ui_component": "TopicContext",
                 "ui_data": ui_data,
-                "found": ui_data.get('found', True) if ui_data else True,
+                "found": True,
             }
 
         except Exception as e:
-            logger.error(f"[VIC CopilotKit] Librarian delegation error: {e}")
+            logger.error(f"[VIC CopilotKit] Search error: {e}", exc_info=True)
             return {
                 "speaker": "librarian",
-                "content": "I couldn't reach my librarian at the moment.",
+                "content": f"I had trouble searching for {topic}.",
                 "found": False,
             }
 
