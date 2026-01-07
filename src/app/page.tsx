@@ -38,58 +38,72 @@ function TopicButton({ topic, onClick }: { topic: string; onClick: (topic: strin
   );
 }
 
-// Smart assistant message - shows Librarian UI when available, VIC text for greetings/questions
+// Smart assistant message - shows BOTH VIC's intro AND Librarian UI when available
 function SmartAssistantMessage({ message }: { message?: { generativeUI?: () => React.ReactNode; content?: string } }) {
   // Get generative UI from tools (Librarian's output)
   const generativeUI = message?.generativeUI?.();
 
-  // Get VIC's text content
-  const textContent = typeof message?.content === "string" ? message.content : "";
+  // Get VIC's text content - clean it up
+  const rawContent = typeof message?.content === "string" ? message.content : "";
+  // Filter out empty, whitespace-only, or tool call artifacts
+  const textContent = rawContent.trim();
+  const isValidText = textContent.length > 2 &&
+    !textContent.startsWith("{") &&
+    !textContent.includes("tool_call") &&
+    !textContent.includes("delegate_to");
 
-  // If there's tool UI (Librarian), show it
+  // If there's tool UI (Librarian), show BOTH VIC's intro AND Librarian's content
   if (generativeUI) {
     return (
-      <div className="flex gap-3 mb-4">
-        {/* Librarian Avatar */}
-        <div className="flex-shrink-0">
-          <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-amber-300">
-            <img
-              src="/London Librarian Avatar 1.png"
-              alt="London Librarian"
-              className="w-full h-full object-cover"
-            />
+      <div className="space-y-3 mb-4">
+        {/* VIC's brief intro if present */}
+        {isValidText && (
+          <div className="flex gap-3">
+            <div className="flex-shrink-0">
+              <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-amber-300">
+                <img src="/vic-avatar.jpg" alt="VIC" className="w-full h-full object-cover" />
+              </div>
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm font-medium text-amber-800">VIC</span>
+              </div>
+              <div className="bg-amber-50 rounded-lg rounded-tl-none p-3 text-stone-800 border-l-2 border-amber-300">
+                {textContent}
+              </div>
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Message Content */}
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-sm font-medium text-amber-700">London Librarian</span>
+        {/* Librarian's research results */}
+        <div className="flex gap-3">
+          <div className="flex-shrink-0">
+            <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-amber-300">
+              <img src="/London Librarian Avatar 1.png" alt="London Librarian" className="w-full h-full object-cover" />
+            </div>
           </div>
-          <div className="bg-amber-50/50 rounded-lg rounded-tl-none p-3 text-stone-800 border-l-2 border-amber-200">
-            {generativeUI}
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-sm font-medium text-amber-700">London Librarian</span>
+            </div>
+            <div className="bg-amber-50/50 rounded-lg rounded-tl-none p-3 text-stone-800 border-l-2 border-amber-200">
+              {generativeUI}
+            </div>
           </div>
         </div>
       </div>
     );
   }
 
-  // If there's text but no tool UI, show VIC's response (for greetings, questions, etc.)
-  if (textContent && textContent.length > 0) {
+  // If there's valid text but no tool UI, show VIC's response only
+  if (isValidText) {
     return (
       <div className="flex gap-3 mb-4">
-        {/* VIC Avatar */}
         <div className="flex-shrink-0">
           <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-amber-300">
-            <img
-              src="/vic-avatar.jpg"
-              alt="VIC"
-              className="w-full h-full object-cover"
-            />
+            <img src="/vic-avatar.jpg" alt="VIC" className="w-full h-full object-cover" />
           </div>
         </div>
-
-        {/* Message Content */}
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1">
             <span className="text-sm font-medium text-amber-800">VIC</span>
@@ -102,7 +116,7 @@ function SmartAssistantMessage({ message }: { message?: { generativeUI?: () => R
     );
   }
 
-  // Nothing to show
+  // Nothing valid to show - return null (no empty messages!)
   return null;
 }
 

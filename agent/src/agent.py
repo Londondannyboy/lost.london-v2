@@ -1271,21 +1271,34 @@ if STATEDEPS_AVAILABLE:
         user_context = ""
         if user and user.id:
             memory = await get_user_memory(user.id)
-            if memory.get("is_returning"):
-                facts = memory.get("facts", [])[:5]
+            facts = memory.get("facts", [])
+            logger.info(f"[VIC CopilotKit] Zep memory for {user.id}: returning={memory.get('is_returning')}, facts_count={len(facts)}")
+            if facts:
+                logger.info(f"[VIC CopilotKit] First 3 facts: {facts[:3]}")
+
+            if memory.get("is_returning") and facts:
                 user_context = f"""
 ## RETURNING USER CONTEXT
 - User Name: {user.name}
-- Status: RETURNING USER - greet warmly!
-- Previous interests: {', '.join(facts) if facts else 'None recorded yet'}
-- Use this context to personalize your response
+- Status: RETURNING USER - greet warmly by name!
+- Their previous interests: {'; '.join(facts[:5])}
+- Reference what they asked about before to show you remember them
+"""
+            elif memory.get("is_returning"):
+                user_context = f"""
+## RETURNING USER CONTEXT
+- User Name: {user.name}
+- Status: Returning user (no specific topics recorded yet)
+- Greet them warmly: "Welcome back, {user.name}!"
 """
             else:
                 user_context = f"""
 ## USER CONTEXT
 - User Name: {user.name}
-- Status: New or first-time user
+- Status: New user
 """
+        else:
+            logger.info(f"[VIC CopilotKit] No user in state for Zep lookup")
 
         return dedent(f"""
 You are VIC (Vic Keegan), a London historian. This is the TEXT CHAT interface - be CONCISE here.
@@ -1521,27 +1534,41 @@ In this chat, keep it SHORT:
             # Run the Librarian agent
             result = await librarian_agent.run(request, deps=librarian_deps)
 
-            # Extract the response
-            response_text = result.output if hasattr(result, 'output') else str(result.data)
+            # Extract the response text
+            response_text = result.output if hasattr(result, 'output') else ""
 
-            # Get UI data from the result
+            # Get UI data from tool results in messages
+            # Pydantic AI stores tool returns in message parts, not result.data
             ui_data = None
             ui_component = None
 
-            if hasattr(result, 'data') and isinstance(result.data, dict):
-                ui_data = result.data
-                ui_component = result.data.get('ui_component')
-            elif hasattr(result, 'all_messages'):
-                for msg in reversed(result.all_messages()):
+            # Search through all messages for tool return parts
+            if hasattr(result, 'all_messages'):
+                for msg in result.all_messages():
                     if hasattr(msg, 'parts'):
                         for part in msg.parts:
-                            if hasattr(part, 'content') and isinstance(part.content, dict):
-                                if 'ui_component' in part.content:
+                            # Tool return parts have 'content' with our dict
+                            part_content = getattr(part, 'content', None)
+                            if isinstance(part_content, dict) and 'ui_component' in part_content:
+                                ui_data = part_content
+                                ui_component = part_content.get('ui_component')
+                                logger.info(f"[VIC CopilotKit] Found Librarian UI data in message part")
+                                break
+                            # Also check tool_name for ToolReturnPart
+                            if hasattr(part, 'tool_name') and hasattr(part, 'content'):
+                                if isinstance(part.content, dict) and 'ui_component' in part.content:
                                     ui_data = part.content
                                     ui_component = part.content.get('ui_component')
+                                    logger.info(f"[VIC CopilotKit] Found Librarian UI data from tool: {part.tool_name}")
                                     break
 
-            logger.info(f"[VIC CopilotKit] Librarian returned: ui_component={ui_component}")
+            # Log what we found
+            if ui_data:
+                articles = ui_data.get('articles', [])
+                has_images = sum(1 for a in articles if a.get('hero_image_url'))
+                logger.info(f"[VIC CopilotKit] Librarian returned: ui_component={ui_component}, articles={len(articles)}, with_images={has_images}")
+            else:
+                logger.warning(f"[VIC CopilotKit] No UI data found from Librarian!")
 
             return {
                 "speaker": "librarian",
