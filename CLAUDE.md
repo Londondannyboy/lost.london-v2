@@ -183,3 +183,156 @@ npm run dev
 | lost.london-clm/api/tools.py        | agent/src/tools.py             | Phonetic corrections    |
 | lost.london-clm/api/agent_config.py | agent/src/agent.py             | VIC persona prompt      |
 | copilotkit-demo/voice-input.tsx     | frontend/src/components/       | Hume voice widget       |
+
+---
+
+## Phase 2: Multi-Agent Architecture (January 2026)
+
+### Overview
+
+Transform from single-agent to **dual-agent architecture**:
+- **VIC** (Orchestrator): Primary voice, storyteller, handles user interaction
+- **Librarian** (Research): Surfaces articles, maps, timelines, visual aids
+
+Full plan at: `~/.claude/plans/zippy-swinging-nebula.md`
+
+### Current Implementation Status
+
+#### ✅ Already Implemented
+- **Zep API routes** (`src/app/api/zep/user/route.ts`) - Full GET/POST with fact extraction
+- **BookStrip component** (`src/components/BookStrip.tsx`) - Dismissible bottom banner
+- **Dashboard page** (`src/app/dashboard/page.tsx`) - "My History" with Zep facts
+- **Header** (`src/components/Header.tsx`) - Book icon + "My History" link
+- **CopilotKit integration** - useRenderToolCall hooks for Generative UI
+- **VoiceInput** - Forwards to CopilotKit via appendMessage
+- **VIC agent with Zep** (`agent/src/agent.py`) - Backend has full Zep integration
+
+#### 🔲 Remaining to Implement
+1. **Librarian Agent** - Create `agent/src/librarian.py`
+2. **delegate_to_librarian tool** - Add to agent.py
+3. **HITL Tools** - Backend tools + frontend hooks
+4. **Dynamic Backgrounds** - Topic-based hero backgrounds
+5. **Voice Mode Toggle** - VIC narrates vs dual voice
+
+### Multi-Agent Architecture
+
+```
+User speaks → Hume EVI (VIC's voice)
+    ↓
+CLM endpoint → Orchestrator
+    ↓
+┌─────────────────────────────────────────────────────────┐
+│  VIC Agent                                              │
+│  "Ah, Thorney Island! Let me check my archives..."     │
+│       ↓ delegates                                       │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │  Librarian Agent                                 │   │
+│  │  Returns: articles, map, timeline               │   │
+│  └─────────────────────────────────────────────────┘   │
+│  VIC: "My librarian found 3 articles about..."         │
+└─────────────────────────────────────────────────────────┘
+    ↓
+CopilotKit renders Generative UI
+```
+
+### Key Patterns
+
+#### Pydantic AI Agent Delegation
+```python
+@agent.tool
+async def delegate_to_librarian(ctx: RunContext[VICDeps], request: str) -> dict:
+    result = await librarian_agent.run(
+        request,
+        deps=ctx.deps,    # Share dependencies (db, zep, state)
+        usage=ctx.usage,  # Aggregate usage metrics
+    )
+    return {"speaker": "librarian", "content": result.output}
+```
+
+#### Human-in-the-Loop (HITL)
+- `confirm_article_relevance` - Ask if article matches interest
+- `suggest_related_explorations` - Offer related topics
+- `save_user_interest` - Confirm before storing to Zep
+- `report_inaccuracy` - Allow feedback on incorrect info
+
+#### Dynamic Topic Backgrounds
+- Search returns `hero_image_url` from articles table
+- Frontend updates background based on current topic
+- Smooth CSS transitions (1-2 seconds)
+
+### Updated Repository Structure
+
+```
+lost-london-v2/
+├── agent/                       # Pydantic AI backend (Railway)
+│   ├── src/
+│   │   ├── agent.py            # VIC agent + Zep (~600 lines)
+│   │   ├── librarian.py        # NEW: Librarian agent
+│   │   ├── tools.py            # Search + phonetic corrections
+│   │   ├── database.py         # RRF hybrid search
+│   │   └── models.py           # Pydantic models
+│   └── pyproject.toml
+│
+└── src/                         # Next.js frontend (Vercel)
+    ├── app/
+    │   ├── page.tsx            # Main: CopilotSidebar + VoiceInput
+    │   ├── dashboard/page.tsx  # My History (Zep facts)
+    │   ├── articles/page.tsx   # Browse articles
+    │   ├── profile/page.tsx    # User profile
+    │   └── api/
+    │       ├── copilotkit/route.ts
+    │       ├── hume-token/route.ts
+    │       ├── zep/user/route.ts    # Zep memory API
+    │       └── user-profile/route.ts
+    └── components/
+        ├── Header.tsx          # Book icon, My History link
+        ├── Footer.tsx
+        ├── BookStrip.tsx       # Book purchase CTA
+        ├── voice-input.tsx     # Hume EVI widget
+        └── generative-ui/
+            ├── ArticleCard.tsx
+            ├── ArticleGrid.tsx
+            ├── LocationMap.tsx
+            └── Timeline.tsx
+```
+
+### Environment Variables (Updated)
+
+```env
+# Vercel (Frontend)
+AGENT_URL=https://your-railway-app.up.railway.app/agui
+HUME_API_KEY=...
+HUME_SECRET_KEY=...
+NEXT_PUBLIC_HUME_CONFIG_ID=...
+ZEP_API_KEY=z_...
+BETTER_AUTH_SECRET=...
+
+# Railway (Backend)
+DATABASE_URL=postgresql://...@neon.tech/neondb?sslmode=require
+GROQ_API_KEY=gsk_...
+VOYAGE_API_KEY=pa-...
+ZEP_API_KEY=z_...
+```
+
+### Key Learnings
+
+1. **Voice-to-CopilotKit Integration**: Voice messages forward via `appendMessage`, agent runs tools, `useRenderToolCall` renders Generative UI in sidebar
+
+2. **Zep Memory**: Graph search for user facts, automatic fact extraction from messages, returning user recognition
+
+3. **Pydantic AI Multi-Agent**: Use `deps=ctx.deps` and `usage=ctx.usage` for shared state and metrics across delegated agents
+
+4. **AG-UI vs A2A**:
+   - AG-UI (to_ag_ui) = Agent-to-UI protocol, used with CopilotKit
+   - A2A (to_a2a) = Agent-to-Agent for external services (not needed for internal delegation)
+
+5. **HITL with CopilotKit**: Tools return `hitl: true`, frontend `useHumanInTheLoop` hook renders UI and calls `respond()`
+
+### References
+
+- Pydantic AI Multi-Agent: https://ai.pydantic.dev/multi-agent-applications/
+- Pydantic AI A2A: https://ai.pydantic.dev/a2a/
+- CopilotKit AG-UI: https://docs.copilotkit.ai
+- CopilotKit HITL: https://docs.copilotkit.ai/pydantic-ai/human-in-the-loop
+- Hume EVI: https://dev.hume.ai/docs/speech-to-speech-evi
+- Zep Memory: https://help.getzep.com

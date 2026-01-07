@@ -12,7 +12,11 @@ const serviceAdapter = new ExperimentalEmptyAdapter();
 // Next.js API route handler - create runtime at request time to get env vars
 export const POST = async (req: NextRequest) => {
   // Get AGENT_URL at runtime, not build time
-  const AGENT_URL = process.env.AGENT_URL || "http://localhost:8000/agui";
+  // IMPORTANT: AG-UI endpoint needs trailing slash
+  let AGENT_URL = process.env.AGENT_URL || "http://localhost:8000/agui";
+  if (!AGENT_URL.endsWith('/')) {
+    AGENT_URL = AGENT_URL + '/';
+  }
   console.log("[CopilotKit] Using AGENT_URL:", AGENT_URL);
 
   // Create CopilotRuntime with our VIC agent
