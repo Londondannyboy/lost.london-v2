@@ -28,7 +28,7 @@ except ImportError:
     ZEP_AVAILABLE = False
     print("[VIC] Warning: zep-cloud not installed, memory features disabled", file=sys.stderr)
 
-from .models import AppState, VICResponse, ArticleCardData, MapLocation, TimelineEvent
+from .models import AppState, VICResponse, ArticleCardData, MapLocation, TimelineEvent, LibrarianDelegation
 from .tools import (
     search_articles,
     normalize_query,
@@ -38,6 +38,7 @@ from .tools import (
     PHONETIC_CORRECTIONS,
 )
 from .database import get_user_preferred_name
+from .librarian import librarian_agent, LibrarianDeps
 
 # =============================================================================
 # SESSION CONTEXT FOR NAME SPACING & GREETING MANAGEMENT
@@ -709,6 +710,83 @@ async def get_current_user_name(ctx: RunContext[VICDeps]) -> dict:
     }
 
 
+@agent.tool
+async def delegate_to_librarian(ctx: RunContext[VICDeps], request: str) -> dict:
+    """
+    Delegate to the London Librarian for visual research materials.
+
+    Use this when you need to surface articles, maps, timelines, or books.
+    The Librarian will find the materials and return UI components to display.
+
+    WHEN TO DELEGATE:
+    - User asks "show me" or "where is" something
+    - User mentions a specific place, era, or topic to explore
+    - You need to find articles to support your storytelling
+    - User asks about VIC's books
+
+    AFTER DELEGATION:
+    - For major searches, acknowledge: "Let me check my archives..." BEFORE delegating
+    - For follow-up queries, delegate silently
+    - Weave the Librarian's findings into your narrative
+
+    Args:
+        request: What to ask the Librarian to find (e.g., "articles about Thorney Island")
+    """
+    print(f"[VIC] Delegating to Librarian: {request}", file=sys.stderr)
+
+    # Create LibrarianDeps from VIC's context
+    librarian_deps = LibrarianDeps(
+        user_id=ctx.deps.user_id,
+        user_name=ctx.deps.user_name,
+        current_topic=ctx.deps.state.current_topic if hasattr(ctx.deps, 'state') else None,
+        user_facts=ctx.deps.user_facts if hasattr(ctx.deps, 'user_facts') else [],
+    )
+
+    try:
+        # Run the Librarian agent
+        result = await librarian_agent.run(request, deps=librarian_deps)
+
+        # Extract the response
+        response_text = result.output if hasattr(result, 'output') else str(result.data)
+
+        # Get UI data from the last tool result if available
+        ui_data = None
+        ui_component = None
+
+        # Check if there's structured data in the result
+        if hasattr(result, 'data') and isinstance(result.data, dict):
+            ui_data = result.data
+            ui_component = result.data.get('ui_component')
+        elif hasattr(result, 'all_messages'):
+            # Try to find tool results in messages
+            for msg in reversed(result.all_messages()):
+                if hasattr(msg, 'parts'):
+                    for part in msg.parts:
+                        if hasattr(part, 'content') and isinstance(part.content, dict):
+                            if 'ui_component' in part.content:
+                                ui_data = part.content
+                                ui_component = part.content.get('ui_component')
+                                break
+
+        print(f"[VIC] Librarian returned: {response_text[:100]}...", file=sys.stderr)
+
+        return {
+            "speaker": "librarian",
+            "content": response_text,
+            "ui_component": ui_component,
+            "ui_data": ui_data,
+            "found": ui_data.get('found', True) if ui_data else True,
+        }
+
+    except Exception as e:
+        print(f"[VIC] Librarian delegation error: {e}", file=sys.stderr)
+        return {
+            "speaker": "librarian",
+            "content": "I couldn't reach my librarian at the moment. Let me tell you what I know...",
+            "found": False,
+        }
+
+
 # =============================================================================
 # FASTAPI APPLICATION
 # =============================================================================
@@ -1352,6 +1430,84 @@ CRITICAL RULES:
             ],
             "ui_component": "BookDisplay",
         }
+
+    @copilotkit_agent.tool
+    async def delegate_to_librarian(ctx: RunContext[StateDeps[VICAgentState]], request: str) -> dict:
+        """
+        Delegate to the London Librarian for visual research materials.
+
+        Use this when you need to surface articles, maps, timelines, or books.
+        The Librarian will find the materials and return UI components to display.
+
+        WHEN TO DELEGATE:
+        - User asks "show me" or "where is" something
+        - User mentions a specific place, era, or topic to explore
+        - You need to find articles to support your storytelling
+        - User asks about VIC's books
+
+        AFTER DELEGATION:
+        - For major searches, acknowledge: "Let me check my archives..." BEFORE delegating
+        - For follow-up queries, delegate silently
+        - The Librarian's UI will appear separately in the chat
+
+        Args:
+            request: What to ask the Librarian to find (e.g., "articles about Thorney Island")
+        """
+        logger.info(f"[VIC CopilotKit] Delegating to Librarian: {request}")
+
+        # Get user context from state
+        state = ctx.deps.state
+        user = state.user
+
+        # Create LibrarianDeps from context
+        librarian_deps = LibrarianDeps(
+            user_id=user.id if user else None,
+            user_name=user.name if user else None,
+            current_topic=request,
+            user_facts=[],
+        )
+
+        try:
+            # Run the Librarian agent
+            result = await librarian_agent.run(request, deps=librarian_deps)
+
+            # Extract the response
+            response_text = result.output if hasattr(result, 'output') else str(result.data)
+
+            # Get UI data from the result
+            ui_data = None
+            ui_component = None
+
+            if hasattr(result, 'data') and isinstance(result.data, dict):
+                ui_data = result.data
+                ui_component = result.data.get('ui_component')
+            elif hasattr(result, 'all_messages'):
+                for msg in reversed(result.all_messages()):
+                    if hasattr(msg, 'parts'):
+                        for part in msg.parts:
+                            if hasattr(part, 'content') and isinstance(part.content, dict):
+                                if 'ui_component' in part.content:
+                                    ui_data = part.content
+                                    ui_component = part.content.get('ui_component')
+                                    break
+
+            logger.info(f"[VIC CopilotKit] Librarian returned: ui_component={ui_component}")
+
+            return {
+                "speaker": "librarian",
+                "content": response_text,
+                "ui_component": ui_component,
+                "ui_data": ui_data,
+                "found": ui_data.get('found', True) if ui_data else True,
+            }
+
+        except Exception as e:
+            logger.error(f"[VIC CopilotKit] Librarian delegation error: {e}")
+            return {
+                "speaker": "librarian",
+                "content": "I couldn't reach my librarian at the moment.",
+                "found": False,
+            }
 
     # Create AG-UI app with StateDeps
     agui_app = copilotkit_agent.to_ag_ui(deps=StateDeps(VICAgentState()))

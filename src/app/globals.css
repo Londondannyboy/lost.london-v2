@@ -87,3 +87,22 @@ body {
 .copilotKitHeaderCloseButton:hover {
   color: #000 !important;
 }
+
+/* Hide CopilotKit "is now live" diamond indicator */
+.copilotKitActivityIndicator,
+[class*="ActivityIndicator"],
+[class*="activityIndicator"],
+.copilotKitHeaderActivityDot,
+[data-copilotkit-activity],
+.copilotKitHeader [class*="dot"],
+.copilotKitHeader [class*="indicator"] {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* Also hide any pulsing/live indicators in header */
+.copilotKitHeader span[class*="live"],
+.copilotKitHeader span[class*="Live"],
+.copilotKitHeader [class*="pulse"] {
+  display: none !important;
+}

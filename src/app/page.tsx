@@ -9,6 +9,7 @@ import { ArticleCard } from "@/components/generative-ui/ArticleCard";
 import { LocationMap } from "@/components/generative-ui/LocationMap";
 import { Timeline } from "@/components/generative-ui/Timeline";
 import { BookDisplay } from "@/components/generative-ui/BookDisplay";
+import { LibrarianMessage, LibrarianThinking } from "@/components/LibrarianAvatar";
 import { useCallback, useEffect, useState } from "react";
 import { authClient } from "@/lib/auth/client";
 
@@ -234,6 +235,57 @@ export default function Home() {
     },
   });
 
+  // =============================================================================
+  // LIBRARIAN: Render delegated research results
+  // When VIC delegates to the Librarian, render with distinct styling
+  // =============================================================================
+
+  useRenderToolCall({
+    name: "delegate_to_librarian",
+    render: ({ result, status }) => {
+      // Loading state
+      if (status !== "complete" || !result) {
+        return <LibrarianThinking />;
+      }
+
+      // Error state
+      if (!result?.found) {
+        return (
+          <LibrarianMessage brief={result?.content}>
+            <div className="p-4 bg-amber-50 rounded-lg text-amber-700">
+              I couldn&apos;t find anything in the archives about that topic.
+            </div>
+          </LibrarianMessage>
+        );
+      }
+
+      // Render the appropriate UI component based on what Librarian returned
+      const uiComponent = result?.ui_component;
+      const uiData = result?.ui_data || result;
+
+      // Wrap Librarian's output in LibrarianMessage for distinct styling
+      return (
+        <LibrarianMessage brief={uiData?.brief || result?.content}>
+          {uiComponent === "ArticleGrid" && uiData?.articles && (
+            <ArticleGrid articles={uiData.articles} query={uiData.query} />
+          )}
+          {uiComponent === "LocationMap" && uiData?.location && (
+            <LocationMap location={uiData.location} />
+          )}
+          {uiComponent === "Timeline" && uiData?.events && (
+            <Timeline era={uiData.era} events={uiData.events} />
+          )}
+          {uiComponent === "BookDisplay" && uiData?.books && (
+            <BookDisplay books={uiData.books} />
+          )}
+          {!uiComponent && result?.content && (
+            <p className="text-stone-600">{result.content}</p>
+          )}
+        </LibrarianMessage>
+      );
+    },
+  });
+
   // Build dynamic instructions with user context
   // NOTE: The backend middleware extracts user info by looking for "User Name:", "User ID:", etc.
   const instructions = user
@@ -255,8 +307,17 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
 - You ARE Vic Keegan. Stay in character always.
 - If asked "what is my name": ${userName ? `Answer "You're ${userName}, of course!"` : 'Say "I don\'t believe you\'ve told me your name yet. What should I call you?"'}
 - If asked about yourself: "I'm Vic Keegan, London historian and author of the Lost London books"
-- ALWAYS use the search_lost_london tool when users ask about any London topic
-- Use show_map for locations, show_timeline for eras, show_books when asked about your books`
+
+## LIBRARIAN DELEGATION
+- Use delegate_to_librarian tool when users ask about places, topics, or want to see visual content
+- For major searches, say "Let me check my archives..." BEFORE calling delegate_to_librarian
+- For follow-up queries, just delegate silently
+- The Librarian will find articles, maps, timelines - weave her findings into your narrative
+- The Librarian's UI appears with a distinct amber styling labeled "London Librarian"
+
+## TOOL USAGE
+- delegate_to_librarian: For finding articles, maps, timelines about topics
+- show_books: When asked about your published books`
     : `You are VIC (Vic Keegan), a warm London historian with 370+ articles. Help users explore London's hidden history. The user is not logged in.
 
 ## CRITICAL IDENTITY RULES
@@ -264,12 +325,30 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
 - You ARE Vic Keegan. Stay in character always.
 - If asked "what is my name": Say "I don't believe you've told me your name yet. What should I call you?"
 - If asked about yourself: "I'm Vic Keegan, London historian and author of the Lost London books"
-- ALWAYS use the search_lost_london tool when users ask about any London topic`;
 
-  // Build personalized initial message
-  const initialMessage = userName
-    ? `Hello ${userName}! I'm VIC, your guide to London's hidden history. Ask me about Thorney Island, the Royal Aquarium, Victorian London, or any corner of this ancient city. You can type here or tap the microphone below to speak.`
-    : "Hello! I'm VIC, your guide to London's hidden history. Ask me about Thorney Island, the Royal Aquarium, Victorian London, or any corner of this ancient city. You can type here or tap the microphone below to speak.";
+## LIBRARIAN DELEGATION
+- Use delegate_to_librarian tool when users ask about places, topics, or want to see visual content
+- For major searches, say "Let me check my archives..." BEFORE calling delegate_to_librarian
+- The Librarian will find articles, maps, timelines - weave her findings into your narrative
+
+## TOOL USAGE
+- delegate_to_librarian: For finding articles, maps, timelines about topics
+- show_books: When asked about your published books`;
+
+  // Build personalized initial message - keep it SHORT
+  const initialMessage = (() => {
+    if (userName && userProfile.isReturningUser && userProfile.facts?.length) {
+      // Returning user with interests - reference their last topic
+      const recentTopic = userProfile.facts[0];
+      return `Welcome back, ${userName}. Last time we discussed ${recentTopic}. Shall we continue, or explore something new?`;
+    } else if (userName) {
+      // Known user, first conversation
+      return `Hello ${userName}. I'm Vic Keegan. What corner of London's history shall we explore?`;
+    } else {
+      // Anonymous user
+      return "Hello. I'm Vic Keegan. How can I help?";
+    }
+  })();
 
   return (
     <CopilotSidebar

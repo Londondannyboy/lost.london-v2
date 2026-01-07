@@ -1,7 +1,7 @@
 """Pydantic models for Lost London V2 agent."""
 
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Literal, Any
 from enum import Enum
 
 
@@ -60,3 +60,67 @@ class AppState(BaseModel):
     last_articles: list[ArticleCardData] = Field(default_factory=list)
     user_name: Optional[str] = None
     conversation_history: list[str] = Field(default_factory=list)
+
+
+# =============================================================================
+# MULTI-AGENT MODELS
+# =============================================================================
+
+class SpeakerSegment(BaseModel):
+    """
+    A segment of a multi-agent response.
+
+    Used when VIC delegates to Librarian - each response segment
+    is tagged with who is speaking.
+    """
+    speaker: Literal["vic", "librarian"] = Field(
+        description="Which agent is speaking: 'vic' for storytelling, 'librarian' for research"
+    )
+    content: str = Field(description="The text content of this segment")
+    ui_components: list[str] = Field(
+        default_factory=list,
+        description="UI components to render (e.g., 'ArticleGrid', 'LocationMap')"
+    )
+    ui_data: Optional[Any] = Field(
+        default=None,
+        description="Data for the UI components (articles, location, etc.)"
+    )
+
+
+class MultiAgentResponse(BaseModel):
+    """
+    Response from multi-agent interaction.
+
+    Contains segments from VIC and/or Librarian, plus metadata.
+    """
+    segments: list[SpeakerSegment] = Field(
+        default_factory=list,
+        description="Ordered list of response segments from different speakers"
+    )
+    mode: Literal["dual_voice", "vic_narrates"] = Field(
+        default="vic_narrates",
+        description="Voice mode: 'vic_narrates' = single voice, 'dual_voice' = separate voices"
+    )
+    primary_speaker: Literal["vic", "librarian"] = Field(
+        default="vic",
+        description="The primary speaker for this response"
+    )
+
+
+class LibrarianDelegation(BaseModel):
+    """
+    Result from delegating to the Librarian agent.
+
+    Used by VIC when calling delegate_to_librarian tool.
+    """
+    speaker: Literal["librarian"] = "librarian"
+    content: str = Field(description="Librarian's brief response")
+    ui_component: Optional[str] = Field(
+        default=None,
+        description="UI component to render (ArticleGrid, LocationMap, Timeline, BookDisplay)"
+    )
+    ui_data: Optional[Any] = Field(
+        default=None,
+        description="Data for the UI component"
+    )
+    found: bool = Field(default=True, description="Whether the research found results")
