@@ -64,9 +64,8 @@ function VoiceButton({ onMessage, userId, userName }: VoiceButtonProps) {
         await connect({
           auth: { type: "accessToken", value: accessToken },
           configId: process.env.NEXT_PUBLIC_HUME_CONFIG_ID || "",
-          sessionSettings: customSessionId ? {
-            customSessionId,
-          } : undefined,
+          // Pass custom session ID for user context (parsed by backend for Zep memory)
+          ...(customSessionId && { customSessionId }),
         });
 
         // Trigger greeting (personalized for returning users)
