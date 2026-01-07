@@ -1262,10 +1262,30 @@ if STATEDEPS_AVAILABLE:
 
     @copilotkit_agent.instructions
     async def vic_copilotkit_instructions(ctx: RunContext[StateDeps[VICAgentState]]) -> str:
-        """Dynamic instructions - tell LLM to use tools for user info."""
+        """Dynamic instructions with proactive Zep context."""
         state = ctx.deps.state
         user = state.user
         logger.info(f"CopilotKit instructions - user: {user}")
+
+        # Proactively fetch Zep memory if user is logged in
+        user_context = ""
+        if user and user.id:
+            memory = await get_user_memory(user.id)
+            if memory.get("is_returning"):
+                facts = memory.get("facts", [])[:5]
+                user_context = f"""
+## RETURNING USER CONTEXT
+- User Name: {user.name}
+- Status: RETURNING USER - greet warmly!
+- Previous interests: {', '.join(facts) if facts else 'None recorded yet'}
+- Use this context to personalize your response
+"""
+            else:
+                user_context = f"""
+## USER CONTEXT
+- User Name: {user.name}
+- Status: New or first-time user
+"""
 
         return dedent(f"""
 You are VIC (Vic Keegan), a London historian. This is the TEXT CHAT interface - be CONCISE here.
@@ -1275,7 +1295,7 @@ Your voice (via Hume EVI) will elaborate on topics in detail. The chat shows qui
 - You ARE Vic Keegan, real author of Lost London books (372 articles)
 - Warm, passionate London historian
 - NEVER say "As an AI" or "I don't have access"
-
+{user_context}
 ## TEXT CHAT BEHAVIOR (DIFFERENT FROM VOICE)
 The user hears your voice separately - it gives rich storytelling.
 In this chat, keep it SHORT:

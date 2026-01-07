@@ -38,18 +38,19 @@ function TopicButton({ topic, onClick }: { topic: string; onClick: (topic: strin
   );
 }
 
-// Librarian-only assistant message - suppresses VIC text, only shows tool UI
-// Uses same layout as user/VIC messages for visual consistency
-function LibrarianOnlyAssistant({ message }: { message?: { generativeUI?: () => React.ReactNode; content?: string } }) {
-  // Only render the generative UI from tools (Librarian's output)
-  // Suppress VIC's text responses - his voice handles that
+// Smart assistant message - shows Librarian UI when available, VIC text for greetings/questions
+function SmartAssistantMessage({ message }: { message?: { generativeUI?: () => React.ReactNode; content?: string } }) {
+  // Get generative UI from tools (Librarian's output)
   const generativeUI = message?.generativeUI?.();
 
-  // If there's tool UI, show it with proper layout
+  // Get VIC's text content
+  const textContent = typeof message?.content === "string" ? message.content : "";
+
+  // If there's tool UI (Librarian), show it
   if (generativeUI) {
     return (
       <div className="flex gap-3 mb-4">
-        {/* Librarian Avatar - same size/position as user/VIC avatars */}
+        {/* Librarian Avatar */}
         <div className="flex-shrink-0">
           <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-amber-300">
             <img
@@ -73,7 +74,35 @@ function LibrarianOnlyAssistant({ message }: { message?: { generativeUI?: () => 
     );
   }
 
-  // No text output for VIC - voice is the response
+  // If there's text but no tool UI, show VIC's response (for greetings, questions, etc.)
+  if (textContent && textContent.length > 0) {
+    return (
+      <div className="flex gap-3 mb-4">
+        {/* VIC Avatar */}
+        <div className="flex-shrink-0">
+          <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-amber-300">
+            <img
+              src="/vic-avatar.jpg"
+              alt="VIC"
+              className="w-full h-full object-cover"
+            />
+          </div>
+        </div>
+
+        {/* Message Content */}
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-sm font-medium text-amber-800">VIC</span>
+          </div>
+          <div className="bg-amber-50 rounded-lg rounded-tl-none p-3 text-stone-800 border-l-2 border-amber-300">
+            {textContent}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Nothing to show
   return null;
 }
 
@@ -475,7 +504,7 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
         }}
         className="border-l border-stone-200"
         UserMessage={CustomUserMessage}
-        AssistantMessage={LibrarianOnlyAssistant}
+        AssistantMessage={SmartAssistantMessage}
       >
       {/* Main Content - Voice-First Hero */}
       <div className="bg-white text-black min-h-screen">
