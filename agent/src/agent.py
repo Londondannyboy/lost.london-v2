@@ -991,18 +991,41 @@ async def clm_endpoint(request: Request):
         if len(parts) > 1:
             user_id = parts[1].split('_')[0] if parts[1] else None
 
-    # Fetch user memory context from Zep
+    # PARALLEL fetch: Zep memory + DB name lookup (saves ~500ms)
     user_context = None
+    db_name = None
     if user_id:
-        user_context = await get_user_memory(user_id)
-        if user_context.get("user_name") and not user_name:
-            user_name = user_context["user_name"]
-        print(f"[VIC CLM] User context: returning={user_context.get('is_returning')}, facts={len(user_context.get('facts', []))}", file=sys.stderr)
+        import asyncio
 
-    # Final fallback: check Neon database for preferred_name
-    if not user_name and user_id:
-        db_name = await get_user_preferred_name(user_id)
-        if db_name:
+        async def safe_get_memory():
+            try:
+                return await get_user_memory(user_id)
+            except Exception as e:
+                print(f"[VIC CLM] Zep lookup failed: {e}", file=sys.stderr)
+                return None
+
+        async def safe_get_name():
+            try:
+                return await get_user_preferred_name(user_id)
+            except Exception as e:
+                print(f"[VIC CLM] DB name lookup failed: {e}", file=sys.stderr)
+                return None
+
+        # Run BOTH in parallel - cuts ~500ms latency
+        async def noop():
+            return None
+
+        user_context, db_name = await asyncio.gather(
+            safe_get_memory(),
+            safe_get_name() if not user_name else noop()
+        )
+
+        if user_context:
+            if user_context.get("user_name") and not user_name:
+                user_name = user_context["user_name"]
+            print(f"[VIC CLM] User context: returning={user_context.get('is_returning')}, facts={len(user_context.get('facts', []))}", file=sys.stderr)
+
+        if db_name and not user_name:
             user_name = db_name
             print(f"[VIC CLM] Got name from Neon DB: {user_name}", file=sys.stderr)
 
