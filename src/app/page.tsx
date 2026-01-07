@@ -713,69 +713,6 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
           </div>
         </section>
 
-        {/* Featured Book */}
-        <section className="py-12 border-b border-gray-200">
-          <div className="max-w-4xl mx-auto px-4">
-            <div className="flex flex-col md:flex-row gap-8 items-center">
-              <div className="md:w-1/3">
-                <div className="aspect-[3/4] overflow-hidden bg-gray-100 rounded-lg shadow-lg">
-                  <img
-                    src="/Thorney London's Forgotten book cover.jpg"
-                    alt="Thorny Island"
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-              </div>
-              <div className="md:w-2/3">
-                <span className="inline-block bg-black text-white text-xs px-3 py-1 mb-3 font-medium">
-                  FEATURED
-                </span>
-                <h2 className="text-3xl font-bold mb-4">
-                  Thorney: London's Forgotten Island
-                </h2>
-                <p className="text-gray-600 mb-4">
-                  The hidden island beneath Westminster. Where Parliament, the Abbey, and the Supreme Court now stand was once an island formed by the River Tyburn.
-                </p>
-                <button
-                  onClick={() => handleTopicClick('Thorney Island')}
-                  className="bg-black text-white px-6 py-2 font-medium hover:bg-gray-800 transition-colors"
-                >
-                  Ask VIC about Thorney Island →
-                </button>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Books */}
-        <section className="py-12 bg-gradient-to-b from-amber-50 to-white">
-          <div className="max-w-4xl mx-auto px-4">
-            <h2 className="text-2xl font-bold mb-6 text-center">Own the Books</h2>
-            <div className="grid grid-cols-3 gap-4 mb-6">
-              <a href="https://www.waterstones.com/author/vic-keegan/4942784" target="_blank" rel="noopener noreferrer" className="group">
-                <div className="aspect-[3/4] overflow-hidden bg-gray-100 rounded-lg shadow group-hover:shadow-lg transition-shadow">
-                  <img src="/lost-london-cover-1.jpg" alt="Lost London Volume 1" className="w-full h-full object-cover" />
-                </div>
-              </a>
-              <a href="https://www.waterstones.com/author/vic-keegan/4942784" target="_blank" rel="noopener noreferrer" className="group">
-                <div className="aspect-[3/4] overflow-hidden bg-gray-100 rounded-lg shadow group-hover:shadow-lg transition-shadow">
-                  <img src="/lost-london-cover-2.jpg" alt="Lost London Volume 2" className="w-full h-full object-cover" />
-                </div>
-              </a>
-              <a href="https://shop.ingramspark.com/b/084?params=NwS1eOq0iGczj35Zm0gAawIEcssFFDCeMABwVB9c3gn" target="_blank" rel="noopener noreferrer" className="group">
-                <div className="aspect-[3/4] overflow-hidden bg-gray-100 rounded-lg shadow group-hover:shadow-lg transition-shadow">
-                  <img src="/Thorney London's Forgotten book cover.jpg" alt="Thorney" className="w-full h-full object-cover" />
-                </div>
-              </a>
-            </div>
-            <div className="text-center">
-              <a href="https://www.waterstones.com/author/vic-keegan/4942784" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 bg-amber-900 text-white px-6 py-3 rounded-lg hover:bg-amber-800 transition-colors font-medium">
-                Buy at Waterstones →
-              </a>
-            </div>
-          </div>
-        </section>
-
         {/* About */}
         <section className="py-12">
           <div className="max-w-2xl mx-auto px-4 text-center">
