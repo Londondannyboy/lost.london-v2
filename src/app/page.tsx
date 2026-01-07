@@ -1,7 +1,7 @@
 "use client";
 
 import { CopilotSidebar } from "@copilotkit/react-ui";
-import { useRenderToolCall, useCopilotChat } from "@copilotkit/react-core";
+import { useRenderToolCall, useCopilotChat, useCoAgent } from "@copilotkit/react-core";
 import { Role, TextMessage } from "@copilotkit/runtime-client-gql";
 import { VoiceInput } from "@/components/voice-input";
 import { ArticleGrid } from "@/components/generative-ui/ArticleGrid";
@@ -48,6 +48,14 @@ async function storeToZep(userId: string, message: string, role: "user" | "assis
     console.error('[VIC] Failed to store to Zep:', e);
   }
 }
+
+// State type that matches the backend AgentState
+type VICAgentState = {
+  user_id: string | null;
+  user_name: string | null;
+  is_returning_user: boolean;
+  recent_interests: string[];
+};
 
 export default function Home() {
   const { appendMessage } = useCopilotChat();
@@ -98,6 +106,30 @@ export default function Home() {
 
   // Get user's first name for personalization
   const userName = userProfile.preferred_name || user?.name?.split(' ')[0] || user?.name;
+
+  // Sync user context with backend agent via useCoAgent
+  const { setState: setAgentState } = useCoAgent<VICAgentState>({
+    name: "vic_agent",
+    initialState: {
+      user_id: user?.id || null,
+      user_name: userName || null,
+      is_returning_user: userProfile.isReturningUser || false,
+      recent_interests: userProfile.facts || [],
+    },
+  });
+
+  // Update agent state when user profile changes
+  useEffect(() => {
+    if (user?.id || userName) {
+      setAgentState({
+        user_id: user?.id || null,
+        user_name: userName || null,
+        is_returning_user: userProfile.isReturningUser || false,
+        recent_interests: userProfile.facts || [],
+      });
+      console.log('[VIC] Agent state updated:', { user_id: user?.id, user_name: userName, is_returning: userProfile.isReturningUser });
+    }
+  }, [user?.id, userName, userProfile.isReturningUser, userProfile.facts, setAgentState]);
 
   // Handle voice messages - forward to CopilotKit and store to Zep
   // Voice → onMessage → appendMessage → Pydantic AI Agent → useRenderToolCall → Generative UI
