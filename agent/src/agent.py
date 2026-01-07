@@ -358,10 +358,8 @@ class VICAgentState(BaseModel):
 try:
     from pydantic_ai.ag_ui import StateDeps
     STATEDEPS_AVAILABLE = True
-    logger.info("StateDeps available for AG-UI")
 except ImportError:
     STATEDEPS_AVAILABLE = False
-    logger.warning("pydantic_ai.ag_ui.StateDeps not available")
 
 
 # =============================================================================
