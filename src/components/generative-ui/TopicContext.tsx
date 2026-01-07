@@ -58,49 +58,53 @@ export function TopicContext({
 
   const hasArticles = articles && articles.length > 0;
   const hasMap = location && location.lat && location.lng;
+  // Timeline needs events - era is optional (we'll use a default)
   const hasTimeline = timeline_events && timeline_events.length > 0;
+  const timelineEra = era || "London History";
 
   // Available tabs based on what data we have
   const tabs = [
-    { id: "articles", label: "Articles", available: hasArticles },
+    { id: "articles", label: `Articles (${articles?.length || 0})`, available: hasArticles },
     { id: "map", label: "Map", available: hasMap },
     { id: "timeline", label: "Timeline", available: hasTimeline },
   ].filter((tab) => tab.available);
 
   return (
-    <div className="space-y-4">
-      {/* Brief summary */}
-      {brief && (
-        <p className="text-sm text-stone-600 italic">
-          {brief}
-        </p>
-      )}
-
-      {/* Hero image if available */}
+    <div className="space-y-3">
+      {/* Hero image - compact with query as overlay */}
       {hero_image && (
-        <div className="rounded-lg overflow-hidden border border-stone-200 shadow-sm">
+        <div className="relative rounded-lg overflow-hidden">
           <img
             src={hero_image}
             alt={query}
-            className="w-full h-48 object-cover"
+            className="w-full h-32 object-cover"
           />
-          <div className="p-2 bg-stone-50 text-xs text-stone-500 text-center">
-            Historic image of {query}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+          <div className="absolute bottom-2 left-3 right-3">
+            <h3 className="text-white font-semibold text-sm">{query}</h3>
+            {brief && <p className="text-white/80 text-xs line-clamp-1">{brief}</p>}
           </div>
         </div>
       )}
 
+      {/* Brief summary - only show if no hero image */}
+      {!hero_image && brief && (
+        <p className="text-sm text-stone-600 bg-stone-50 rounded-lg p-3">
+          {brief}
+        </p>
+      )}
+
       {/* Tab navigation if we have multiple content types */}
       {tabs.length > 1 && (
-        <div className="flex gap-2 border-b border-stone-200 pb-2">
+        <div className="flex gap-1.5 border-b border-stone-200 pb-2">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as typeof activeTab)}
-              className={`px-4 py-1.5 text-sm rounded-full transition-colors ${
+              className={`px-3 py-1 text-xs rounded-full transition-colors ${
                 activeTab === tab.id
-                  ? "bg-amber-100 text-amber-800 font-medium"
-                  : "text-stone-500 hover:bg-stone-100"
+                  ? "bg-amber-500 text-white font-medium"
+                  : "bg-stone-100 text-stone-600 hover:bg-stone-200"
               }`}
             >
               {tab.label}
@@ -113,7 +117,7 @@ export function TopicContext({
       <div>
         {/* Articles */}
         {activeTab === "articles" && hasArticles && (
-          <div className="space-y-4">
+          <div className="space-y-2">
             {articles.map((article, index) => (
               <ArticleCard
                 key={article.id}
@@ -136,29 +140,11 @@ export function TopicContext({
           <LocationMap location={location} />
         )}
 
-        {/* Timeline */}
-        {activeTab === "timeline" && hasTimeline && era && timeline_events && (
-          <Timeline era={era} events={timeline_events} />
+        {/* Timeline - uses era or default */}
+        {activeTab === "timeline" && hasTimeline && timeline_events && (
+          <Timeline era={timelineEra} events={timeline_events} />
         )}
       </div>
-
-      {/* Quick links to other content types */}
-      {tabs.length > 1 && (
-        <div className="flex items-center gap-2 text-xs text-stone-400">
-          <span>Also available:</span>
-          {tabs
-            .filter((tab) => tab.id !== activeTab)
-            .map((tab, i) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as typeof activeTab)}
-                className="underline hover:text-amber-600"
-              >
-                {tab.label}
-              </button>
-            ))}
-        </div>
-      )}
     </div>
   );
 }

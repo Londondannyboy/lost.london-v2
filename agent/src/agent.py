@@ -58,12 +58,30 @@ _current_user_context: dict = {}
 
 @dataclass
 class SessionContext:
-    """Track conversation state per session for name spacing and greeting."""
+    """Track conversation state per session for name spacing and greeting.
+
+    IMPORTANT: User context is fetched ONCE on first message and cached here.
+    Follow-up messages skip Zep/DB lookups entirely for instant response.
+    """
     turns_since_name_used: int = 0
     name_used_in_greeting: bool = False
     greeted_this_session: bool = False
     last_topic: str = ""
     last_interaction_time: float = field(default_factory=time.time)
+
+    # CACHED USER CONTEXT (fetched once, used for all follow-ups)
+    user_name: Optional[str] = None  # User's name (from session/DB/Zep)
+    user_context: Optional[dict] = None  # Full Zep context (facts, interests)
+    context_fetched: bool = False  # True after first lookup completes
+
+    # PRE-FETCHED CONTENT (for instant "yes" responses like lost.london)
+    prefetched_topic: str = ""  # The topic we pre-fetched
+    prefetched_content: str = ""  # Article content ready to use
+    prefetched_titles: list = field(default_factory=list)
+
+    # SUGGESTIONS (for "you might also like..." like lost.london)
+    suggestions: list = field(default_factory=list)  # Related topics
+    last_suggested_topic: str = ""  # What VIC suggested (for "yes" handling)
 
 
 def get_session_context(session_id: str) -> SessionContext:
@@ -116,6 +134,73 @@ def increment_turn(session_id: str):
     ctx = get_session_context(session_id)
     ctx.turns_since_name_used += 1
     ctx.last_interaction_time = time.time()
+
+
+# =============================================================================
+# SESSION CONTEXT CACHING (CRITICAL FOR FAST FOLLOW-UPS)
+# =============================================================================
+
+def get_cached_user_context(session_id: str) -> tuple[Optional[str], Optional[dict], bool]:
+    """
+    Get cached user context from session.
+
+    Returns:
+        (user_name, user_context, was_cached)
+        - If was_cached=True, skip Zep/DB lookups entirely
+        - If was_cached=False, caller should fetch and cache
+    """
+    ctx = get_session_context(session_id)
+    if ctx.context_fetched:
+        return ctx.user_name, ctx.user_context, True
+    return None, None, False
+
+
+def cache_user_context(session_id: str, user_name: Optional[str], user_context: Optional[dict]):
+    """
+    Cache user context after first lookup.
+    All subsequent messages in this session will skip Zep/DB calls.
+    """
+    ctx = get_session_context(session_id)
+    ctx.user_name = user_name
+    ctx.user_context = user_context
+    ctx.context_fetched = True
+    print(f"[SessionCache] Cached context for session: name={user_name}, facts={len(user_context.get('facts', [])) if user_context else 0}", file=sys.stderr)
+
+
+def prefetch_topic_content(session_id: str, topic: str, content: str, titles: list):
+    """
+    Pre-fetch content for a suggested topic (like lost.london).
+    When user says "yes", we can respond instantly without searching.
+    """
+    ctx = get_session_context(session_id)
+    ctx.prefetched_topic = topic
+    ctx.prefetched_content = content
+    ctx.prefetched_titles = titles
+    print(f"[SessionCache] Pre-fetched content for '{topic}' ({len(content)} chars)", file=sys.stderr)
+
+
+def get_prefetched_content(session_id: str, query: str) -> tuple[Optional[str], Optional[list]]:
+    """
+    Check if we have pre-fetched content matching the query.
+    Returns (content, titles) or (None, None) if no match.
+    """
+    ctx = get_session_context(session_id)
+    if ctx.prefetched_topic and query.lower() in ctx.prefetched_topic.lower():
+        return ctx.prefetched_content, ctx.prefetched_titles
+    return None, None
+
+
+def set_last_suggestion(session_id: str, topic: str):
+    """Store the topic VIC just suggested (for handling 'yes' responses)."""
+    ctx = get_session_context(session_id)
+    ctx.last_suggested_topic = topic
+    ctx.suggestions.append(topic)
+
+
+def get_last_suggestion(session_id: str) -> Optional[str]:
+    """Get the last topic VIC suggested."""
+    ctx = get_session_context(session_id)
+    return ctx.last_suggested_topic if ctx.last_suggested_topic else None
 
 
 # =============================================================================
@@ -991,48 +1076,66 @@ async def clm_endpoint(request: Request):
         if len(parts) > 1:
             user_id = parts[1].split('_')[0] if parts[1] else None
 
-    # PARALLEL fetch: Zep memory + DB name lookup (saves ~500ms)
-    user_context = None
-    db_name = None
-    if user_id:
-        import asyncio
+    # ==========================================================================
+    # CRITICAL: CHECK SESSION CACHE FIRST (makes follow-ups instant!)
+    # User context is fetched ONCE on first message, then cached.
+    # ==========================================================================
+    cached_name, cached_context, was_cached = get_cached_user_context(session_id or "default")
 
-        async def safe_get_memory():
-            try:
-                return await get_user_memory(user_id)
-            except Exception as e:
-                print(f"[VIC CLM] Zep lookup failed: {e}", file=sys.stderr)
+    if was_cached:
+        # FAST PATH: Use cached context, skip Zep/DB entirely
+        print(f"[VIC CLM] ⚡ CACHE HIT - skipping Zep/DB lookups (instant!)", file=sys.stderr)
+        if cached_name and not user_name:
+            user_name = cached_name
+        user_context = cached_context
+    else:
+        # SLOW PATH (first message only): Fetch and cache
+        print(f"[VIC CLM] 🔍 First message - fetching user context...", file=sys.stderr)
+        user_context = None
+        db_name = None
+
+        if user_id:
+            import asyncio
+
+            async def safe_get_memory():
+                try:
+                    return await get_user_memory(user_id)
+                except Exception as e:
+                    print(f"[VIC CLM] Zep lookup failed: {e}", file=sys.stderr)
+                    return None
+
+            async def safe_get_name():
+                try:
+                    return await get_user_preferred_name(user_id)
+                except Exception as e:
+                    print(f"[VIC CLM] DB name lookup failed: {e}", file=sys.stderr)
+                    return None
+
+            # Run BOTH in parallel - cuts ~500ms latency
+            async def noop():
                 return None
 
-        async def safe_get_name():
-            try:
-                return await get_user_preferred_name(user_id)
-            except Exception as e:
-                print(f"[VIC CLM] DB name lookup failed: {e}", file=sys.stderr)
-                return None
+            user_context, db_name = await asyncio.gather(
+                safe_get_memory(),
+                safe_get_name() if not user_name else noop()
+            )
 
-        # Run BOTH in parallel - cuts ~500ms latency
-        async def noop():
-            return None
+            if user_context:
+                if user_context.get("user_name") and not user_name:
+                    user_name = user_context["user_name"]
+                print(f"[VIC CLM] User context: returning={user_context.get('is_returning')}, facts={len(user_context.get('facts', []))}", file=sys.stderr)
 
-        user_context, db_name = await asyncio.gather(
-            safe_get_memory(),
-            safe_get_name() if not user_name else noop()
-        )
+            if db_name and not user_name:
+                user_name = db_name
+                print(f"[VIC CLM] Got name from Neon DB: {user_name}", file=sys.stderr)
 
-        if user_context:
-            if user_context.get("user_name") and not user_name:
-                user_name = user_context["user_name"]
-            print(f"[VIC CLM] User context: returning={user_context.get('is_returning')}, facts={len(user_context.get('facts', []))}", file=sys.stderr)
-
-        if db_name and not user_name:
-            user_name = db_name
-            print(f"[VIC CLM] Got name from Neon DB: {user_name}", file=sys.stderr)
+        # CACHE the results for all future messages in this session
+        cache_user_context(session_id or "default", user_name, user_context)
 
     # Log final name resolution
     _last_request_debug["user_name_resolved"] = user_name
     _last_request_debug["user_id"] = user_id
-    print(f"[VIC CLM] Final user_name: {user_name}, user_id: {user_id}", file=sys.stderr)
+    print(f"[VIC CLM] Final user_name: {user_name}, user_id: {user_id}, cached: {was_cached}", file=sys.stderr)
 
     # Normalize query with phonetic corrections
     normalized_query = normalize_query(user_msg)
@@ -1063,21 +1166,32 @@ async def clm_endpoint(request: Request):
         if not ctx.greeted_this_session:
             # First greeting this session - personalize based on user context
             is_returning = user_context.get("is_returning", False) if user_context else False
+            user_interests = user_context.get("interests", []) if user_context else []
 
-            if is_returning and user_name:
-                # Returning user with name
+            if is_returning and user_name and user_interests:
+                # Returning user with known interests - suggest their topic!
+                suggested_topic = user_interests[0]  # Most recent interest
+                response_text = f"Welcome back, {user_name}! I remember you were interested in {suggested_topic}. Shall we explore that further, or would you like to discover something new?"
+                # STORE the suggestion so "yes" works
+                set_last_suggestion(session_id or "default", suggested_topic)
+                mark_name_used(session_id or "default", in_greeting=True)
+                print(f"[VIC CLM] Suggesting topic from Zep: {suggested_topic}", file=sys.stderr)
+            elif is_returning and user_name:
+                # Returning user with name (no interests yet)
                 response_text = f"Welcome back to Lost London, {user_name}! Lovely to hear from you again. What corner of London's hidden history shall we explore today?"
                 mark_name_used(session_id or "default", in_greeting=True)
             elif user_name:
-                # New user with name
-                response_text = f"Welcome to Lost London, {user_name}! I'm Vic Keegan, and I've spent years uncovering this city's hidden stories. Ask me about Thorney Island, the Royal Aquarium, or any corner of London's past."
+                # New user with name - suggest Thorney Island
+                response_text = f"Welcome to Lost London, {user_name}! I'm Vic Keegan. I've spent years uncovering this city's hidden stories. Shall I tell you about Thorney Island, the mysterious island beneath Westminster?"
+                set_last_suggestion(session_id or "default", "Thorney Island")
                 mark_name_used(session_id or "default", in_greeting=True)
             else:
-                # Anonymous user
-                response_text = "Welcome to Lost London! I'm Vic Keegan, historian and author. I've collected over 370 stories about London's hidden history. What would you like to discover?"
+                # Anonymous user - suggest Royal Aquarium
+                response_text = "Welcome to Lost London! I'm Vic Keegan, historian and author. I've collected over 370 stories about London's hidden history. Shall I tell you about the Royal Aquarium, Westminster's vanished pleasure palace?"
+                set_last_suggestion(session_id or "default", "Royal Aquarium")
 
             ctx.greeted_this_session = True
-            print(f"[VIC CLM] Greeting: user_name={user_name}, is_returning={is_returning}", file=sys.stderr)
+            print(f"[VIC CLM] Greeting: user_name={user_name}, is_returning={is_returning}, interests={user_interests}", file=sys.stderr)
         else:
             # Already greeted - don't re-greet
             response_text = "What would you like to explore? I've got stories about Thorney Island, the Royal Aquarium, hidden rivers, and much more."
@@ -1116,6 +1230,40 @@ from Roman London to Victorian music halls. Would you like to hear about any par
             stream_sse_response(response_text.replace('\n', ' '), str(uuid.uuid4())),
             media_type="text/event-stream"
         )
+
+    # ==========================================================================
+    # AFFIRMATION HANDLING: "yes", "sure", "go on" -> use last suggested topic
+    # ==========================================================================
+    AFFIRMATION_WORDS = {
+        "yes", "yeah", "yep", "yup", "sure", "okay", "ok", "please", "aye",
+        "absolutely", "definitely", "certainly", "indeed", "alright", "right",
+    }
+    AFFIRMATION_PHRASES = {
+        "go on", "tell me more", "tell me", "go ahead", "yes please", "sure thing",
+        "of course", "i'd like that", "i would like that", "sounds good", "sounds great",
+        "let's do it", "let's hear it", "why not", "i'm interested", "please do",
+    }
+
+    # Check if this is a pure affirmation
+    is_affirmation = (
+        normalized_lower in AFFIRMATION_WORDS or
+        normalized_lower in AFFIRMATION_PHRASES or
+        any(phrase in normalized_lower for phrase in AFFIRMATION_PHRASES)
+    )
+
+    if is_affirmation:
+        last_suggestion = get_last_suggestion(session_id or "default")
+        if last_suggestion:
+            print(f"[VIC CLM] ⚡ Affirmation '{normalized_lower}' -> using last suggestion: '{last_suggestion}'", file=sys.stderr)
+            # Replace query with the suggested topic
+            normalized_query = last_suggestion
+        else:
+            # No suggestion stored - ask what they want
+            response_text = "What would you like to hear about? I've got fascinating stories about Thorney Island, the Royal Aquarium, London's hidden rivers, and much more."
+            return StreamingResponse(
+                stream_sse_response(response_text, str(uuid.uuid4())),
+                media_type="text/event-stream"
+            )
 
     # Increment turn counter for name spacing
     increment_turn(session_id)
