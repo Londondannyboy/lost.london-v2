@@ -917,6 +917,30 @@ async def stream_sse_response(content: str, msg_id: str) -> AsyncGenerator[str, 
     yield "data: [DONE]\n\n"
 
 
+# Debug endpoint
+@app.get("/debug/greeting-check")
+async def debug_greeting():
+    """Debug endpoint to check greeting detection."""
+    from .tools import normalize_query
+    test_queries = ["hello", "hi", "hey", "speak your greeting", "howdy", "Hello"]
+    results = {}
+    for q in test_queries:
+        normalized = normalize_query(q)
+        normalized_lower = normalized.lower().strip()
+        is_greeting = (
+            "speak your greeting" in q.lower() or
+            normalized_lower in ["hello", "hi", "hey", "hiya", "howdy", "greetings", "start"] or
+            normalized_lower.startswith("hello ") or
+            normalized_lower.startswith("hi ")
+        )
+        results[q] = {
+            "normalized": normalized,
+            "normalized_lower": normalized_lower,
+            "is_greeting": is_greeting
+        }
+    return results
+
+
 def extract_session_id(request: Request, body: dict) -> Optional[str]:
     """
     Extract custom_session_id from request (matches lost.london-clm pattern).
