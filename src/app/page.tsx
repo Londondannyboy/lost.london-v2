@@ -9,6 +9,7 @@ import { ArticleCard } from "@/components/generative-ui/ArticleCard";
 import { LocationMap } from "@/components/generative-ui/LocationMap";
 import { Timeline } from "@/components/generative-ui/Timeline";
 import { BookDisplay } from "@/components/generative-ui/BookDisplay";
+import { TopicContext } from "@/components/generative-ui/TopicContext";
 import { LibrarianMessage, LibrarianThinking } from "@/components/LibrarianAvatar";
 import { CustomUserMessage, CustomAssistantMessage, ChatUserContext } from "@/components/ChatMessages";
 import { useCallback, useEffect, useState } from "react";
@@ -269,7 +270,22 @@ export default function Home() {
       const uiComponent = result?.ui_component;
       const uiData = result?.ui_data || result;
 
-      // Wrap Librarian's output in LibrarianMessage for distinct styling
+      // TopicContext is rendered directly (it includes its own Librarian header)
+      if (uiComponent === "TopicContext") {
+        return (
+          <TopicContext
+            query={uiData?.query || ""}
+            brief={uiData?.brief}
+            articles={uiData?.articles}
+            location={uiData?.location}
+            era={uiData?.era}
+            timeline_events={uiData?.timeline_events}
+            hero_image={uiData?.hero_image}
+          />
+        );
+      }
+
+      // Wrap other Librarian outputs in LibrarianMessage for distinct styling
       return (
         <LibrarianMessage brief={uiData?.brief || result?.content}>
           {uiComponent === "ArticleGrid" && uiData?.articles && (

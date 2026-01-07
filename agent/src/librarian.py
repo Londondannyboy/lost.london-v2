@@ -32,6 +32,14 @@ LIBRARIAN_SYSTEM_PROMPT = """You are VIC's Librarian - the keeper of Lost London
 - You find articles, maps, and timelines
 - VIC's VOICE will elaborate on these - you just present the facts and visuals
 
+## TOOL PREFERENCE
+For topic searches, ALWAYS use surface_topic_context FIRST.
+This returns everything at once: articles, map, timeline, and image.
+
+Only use individual tools (surface_articles, surface_map, surface_timeline) for:
+- Follow-up requests ("show me just the map")
+- Specific individual items
+
 ## HOW YOU RESPOND
 When returning results, be helpful and factual:
 - "I found 3 articles about [topic]. Here are the key details..."
@@ -303,3 +311,96 @@ async def surface_books(ctx: RunContext[LibrarianDeps]) -> dict:
         "speaker": "librarian",
         "brief": "Here are VIC's published books.",
     }
+
+
+@librarian_agent.tool
+async def surface_topic_context(ctx: RunContext[LibrarianDeps], topic: str) -> dict:
+    """
+    Surface COMPLETE context for a topic: articles, map (if location known), timeline (if era known).
+
+    This is the PREFERRED tool for topic searches - it returns everything relevant at once.
+
+    Args:
+        topic: The topic to research (e.g., "Royal Aquarium", "Thorney Island")
+    """
+    print(f"[Librarian] Researching complete context for: {topic}", file=sys.stderr)
+
+    # 1. Search for articles
+    results = await search_articles(topic, limit=5)
+
+    response = {
+        "found": bool(results.articles),
+        "query": topic,
+        "speaker": "librarian",
+        "ui_component": "TopicContext",  # Combined UI component
+    }
+
+    if not results.articles:
+        response["brief"] = f"I couldn't find anything about {topic} in the archives."
+        return response
+
+    # 2. Build article cards
+    article_cards = []
+    top_article = results.articles[0]
+    for article in results.articles[:3]:
+        location = extract_location_from_content(article.content, article.title)
+        era = extract_era_from_content(article.content)
+
+        article_cards.append({
+            "id": article.id,
+            "title": article.title,
+            "excerpt": article.content[:200] + "...",
+            "hero_image_url": article.hero_image_url if hasattr(article, 'hero_image_url') else None,
+            "score": article.score,
+            "location": location.model_dump() if location else None,
+            "era": era,
+        })
+
+    response["articles"] = article_cards
+
+    # 3. Extract location from top article
+    location = extract_location_from_content(top_article.content, top_article.title)
+    if location:
+        response["location"] = location.model_dump()
+
+    # 4. Extract era and add timeline if relevant
+    era = extract_era_from_content(top_article.content)
+    if era:
+        response["era"] = era
+        # Add timeline events for known eras
+        TIMELINES = {
+            "victorian": [
+                {"year": 1837, "title": "Queen Victoria's Coronation", "description": "Beginning of the Victorian era"},
+                {"year": 1851, "title": "Great Exhibition", "description": "Crystal Palace opens in Hyde Park"},
+                {"year": 1863, "title": "First Underground", "description": "Metropolitan Railway opens"},
+                {"year": 1876, "title": "Royal Aquarium Opens", "description": "Entertainment venue in Westminster"},
+                {"year": 1901, "title": "End of Era", "description": "Death of Queen Victoria"},
+            ],
+            "georgian": [
+                {"year": 1714, "title": "George I", "description": "House of Hanover begins"},
+                {"year": 1750, "title": "Westminster Bridge", "description": "Second Thames crossing opens"},
+                {"year": 1830, "title": "End of Era", "description": "Death of George IV"},
+            ],
+        }
+        era_lower = era.lower()
+        for key, events in TIMELINES.items():
+            if key in era_lower:
+                response["timeline_events"] = events
+                break
+
+    # 5. Extract hero image from top article
+    if hasattr(top_article, 'hero_image_url') and top_article.hero_image_url:
+        response["hero_image"] = top_article.hero_image_url
+
+    # 6. Create brief summary
+    parts = [f"I found {len(article_cards)} articles about {topic}."]
+    if location:
+        parts.append(f"It was located at {location.name}.")
+    if era:
+        parts.append(f"This was during the {era} era.")
+    parts.append("VIC can tell you more about this.")
+
+    response["brief"] = " ".join(parts)
+    ctx.deps.current_topic = topic
+
+    return response
