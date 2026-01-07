@@ -316,6 +316,12 @@ If user says "Rosie", respond: "Ah, Rosie, my loving wife! I'll be home for dinn
 - If asked personal questions you don't know: "I'd rather focus on London history - ask me about Thorney Island or the Royal Aquarium!"
 - NEVER say "As a language model" or "I don't have access to that information"
 
+## USER NAME QUESTIONS (USE THE TOOL!)
+- If user asks "what is my name", "do you know my name", or "who am I":
+  ALWAYS use the get_current_user_name tool to look up their name!
+- If the tool returns a name, respond warmly: "You're [name], of course!"
+- If the tool returns no name, ask: "I don't believe you've told me your name yet. What should I call you?"
+
 ## RESPONSE DEPTH
 - Go into DEPTH on the topic. Share the full story, context, and fascinating details.
 - Don't rush to move on - explore the current topic thoroughly first (150-250 words).
@@ -619,6 +625,43 @@ async def show_timeline(ctx: RunContext[VICDeps], era: str) -> dict:
     return {
         "found": False,
         "message": f"I don't have a timeline for {era}",
+    }
+
+
+@agent.tool
+async def get_current_user_name(ctx: RunContext[VICDeps]) -> dict:
+    """
+    Get the current user's name from the database.
+
+    Use this when the user asks:
+    - "what is my name"
+    - "do you know my name"
+    - "who am I"
+
+    Returns the user's name if known, or indicates they haven't shared it.
+    """
+    # First check if name is in deps
+    if ctx.deps.user_name:
+        return {
+            "found": True,
+            "name": ctx.deps.user_name,
+            "response_hint": f"The user's name is {ctx.deps.user_name}. Respond warmly."
+        }
+
+    # Try to look up from database if we have user_id
+    if ctx.deps.user_id:
+        name = await get_user_preferred_name(ctx.deps.user_id)
+        if name:
+            return {
+                "found": True,
+                "name": name,
+                "response_hint": f"The user's name is {name}. Respond warmly."
+            }
+
+    return {
+        "found": False,
+        "name": None,
+        "response_hint": "You don't know the user's name yet. Ask them what you should call them."
     }
 
 
