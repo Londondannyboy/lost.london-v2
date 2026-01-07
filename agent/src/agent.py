@@ -836,6 +836,7 @@ def extract_session_id(request: Request, body: dict) -> Optional[str]:
     """
     Extract custom_session_id from request (matches lost.london-clm pattern).
     Checks: query params, headers, body.custom_session_id, body.metadata.custom_session_id
+    Also checks Hume-specific headers.
     """
     # 1. Query params
     session_id = request.query_params.get("custom_session_id")
@@ -843,15 +844,16 @@ def extract_session_id(request: Request, body: dict) -> Optional[str]:
         print(f"[VIC CLM] Session ID from query params: {session_id}", file=sys.stderr)
         return session_id
 
-    # 2. Headers
-    for header_name in ["x-custom-session-id", "x-session-id", "custom-session-id"]:
+    # 2. Headers (including Hume-specific)
+    for header_name in ["x-custom-session-id", "x-session-id", "custom-session-id",
+                        "x-hume-session-id", "x-hume-custom-session-id"]:
         session_id = request.headers.get(header_name)
         if session_id:
             print(f"[VIC CLM] Session ID from header {header_name}: {session_id}", file=sys.stderr)
             return session_id
 
     # 3. Body direct
-    session_id = body.get("custom_session_id") or body.get("session_id")
+    session_id = body.get("custom_session_id") or body.get("session_id") or body.get("customSessionId")
     if session_id:
         print(f"[VIC CLM] Session ID from body: {session_id}", file=sys.stderr)
         return session_id
@@ -859,9 +861,17 @@ def extract_session_id(request: Request, body: dict) -> Optional[str]:
     # 4. Body metadata
     metadata = body.get("metadata", {})
     if metadata:
-        session_id = metadata.get("custom_session_id") or metadata.get("session_id")
+        session_id = metadata.get("custom_session_id") or metadata.get("session_id") or metadata.get("customSessionId")
         if session_id:
             print(f"[VIC CLM] Session ID from body.metadata: {session_id}", file=sys.stderr)
+            return session_id
+
+    # 5. Check session_settings (Hume may forward this)
+    session_settings = body.get("session_settings", {})
+    if session_settings:
+        session_id = session_settings.get("customSessionId") or session_settings.get("custom_session_id")
+        if session_id:
+            print(f"[VIC CLM] Session ID from body.session_settings: {session_id}", file=sys.stderr)
             return session_id
 
     return None
@@ -941,12 +951,15 @@ async def clm_endpoint(request: Request):
         "query_params": dict(request.query_params),
         "headers": {k: v for k, v in request.headers.items() if k.lower() in [
             "x-custom-session-id", "x-session-id", "custom-session-id",
-            "authorization", "content-type", "x-hume-session-id"
+            "authorization", "content-type", "x-hume-session-id", "x-hume-custom-session-id"
         ]},
+        "session_settings": body.get("session_settings", {}),
+        "metadata": body.get("metadata", {}),
+        "custom_session_id": body.get("custom_session_id") or body.get("customSessionId"),
         "messages": [
             {
                 "role": m.get("role"),
-                "content_preview": str(m.get("content", ""))[:300]
+                "content_preview": str(m.get("content", ""))[:500]
             }
             for m in messages
         ],
