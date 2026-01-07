@@ -129,15 +129,20 @@ export default function Home() {
     }
   }, [user?.id, user?.name, user?.email, userName, agentState?.user?.id, setAgentState]);
 
-  // Handle voice messages - forward to CopilotKit and store to Zep
-  // Voice → onMessage → appendMessage → Pydantic AI Agent → useRenderToolCall → Generative UI
+  // Handle voice messages
+  // IMPORTANT: Only forward USER messages to CopilotKit to trigger tools
+  // VIC's VOICE responses should NOT be printed - voice IS the response
+  // Librarian UI will appear via useRenderToolCall when tools run
   const handleVoiceMessage = useCallback((text: string, role?: "user" | "assistant") => {
-    console.log(`[VIC] Voice ${role}: ${text.slice(0, 80)}...`);
+    console.log(`[VIC] Voice ${role}: ${text.slice(0, 50)}...`);
 
-    // Forward to CopilotKit - this triggers the agent which runs tools
-    // Tool results render in the CopilotSidebar via useRenderToolCall
-    const messageRole = role === "user" ? Role.User : Role.Assistant;
-    appendMessage(new TextMessage({ content: text, role: messageRole }));
+    // Only forward USER messages to CopilotKit
+    // This triggers the agent which runs tools -> Librarian UI appears
+    // VIC's spoken response should NOT appear as text (ruins the magic)
+    if (role === "user") {
+      appendMessage(new TextMessage({ content: text, role: Role.User }));
+    }
+    // Note: VIC's voice response is handled by Hume - don't duplicate in chat
 
     // Store to Zep memory for returning user recognition
     if (user?.id) {
@@ -305,6 +310,7 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
 ## CRITICAL IDENTITY RULES
 - NEVER say "I am a language model" or "I don't have access to personal information"
 - You ARE Vic Keegan. Stay in character always.
+- NEVER output code, tool names, function calls, or technical text - speak naturally
 - If asked "what is my name": ${userName ? `Answer "You're ${userName}, of course!"` : 'Say "I don\'t believe you\'ve told me your name yet. What should I call you?"'}
 - If asked about yourself: "I'm Vic Keegan, London historian and author of the Lost London books"
 
@@ -313,16 +319,22 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
 - For major searches, say "Let me check my archives..." BEFORE calling delegate_to_librarian
 - For follow-up queries, just delegate silently
 - The Librarian will find articles, maps, timelines - weave her findings into your narrative
-- The Librarian's UI appears with a distinct amber styling labeled "London Librarian"
 
 ## TOOL USAGE
 - delegate_to_librarian: For finding articles, maps, timelines about topics
-- show_books: When asked about your published books`
+- show_books: When asked about your published books
+
+## OUTPUT RULES
+- Keep responses SHORT and conversational (2-3 sentences max for greetings)
+- NEVER output code snippets, function names, or technical syntax
+- NEVER repeat yourself or echo facts back verbatim
+- Speak naturally as a historian sharing stories`
     : `You are VIC (Vic Keegan), a warm London historian with 370+ articles. Help users explore London's hidden history. The user is not logged in.
 
 ## CRITICAL IDENTITY RULES
 - NEVER say "I am a language model" or "I don't have access to personal information"
 - You ARE Vic Keegan. Stay in character always.
+- NEVER output code, tool names, function calls, or technical text - speak naturally
 - If asked "what is my name": Say "I don't believe you've told me your name yet. What should I call you?"
 - If asked about yourself: "I'm Vic Keegan, London historian and author of the Lost London books"
 
@@ -333,19 +345,32 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
 
 ## TOOL USAGE
 - delegate_to_librarian: For finding articles, maps, timelines about topics
-- show_books: When asked about your published books`;
+- show_books: When asked about your published books
+
+## OUTPUT RULES
+- Keep responses SHORT and conversational (2-3 sentences max for greetings)
+- NEVER output code snippets, function names, or technical syntax
+- Speak naturally as a historian sharing stories`;
 
   // Build personalized initial message - keep it SHORT
+  // Use extracted interests (not raw facts) for better UX
   const initialMessage = (() => {
-    if (userName && userProfile.isReturningUser && userProfile.facts?.length) {
-      // Returning user with interests - reference their last topic
-      const recentTopic = userProfile.facts[0];
-      return `Welcome back, ${userName}. Last time we discussed ${recentTopic}. Shall we continue, or explore something new?`;
+    // Get clean interest from extracted interests array (not raw facts)
+    const recentInterest = userProfile.facts
+      ?.map((f: string) => {
+        // Extract topic from fact patterns
+        const match = f.match(/(?:interested in|asked about|discussed|talked about|curious about)\s+(.+)/i);
+        return match?.[1]?.replace(/['"]/g, '').trim();
+      })
+      .filter(Boolean)[0];
+
+    if (userName && userProfile.isReturningUser && recentInterest) {
+      return `Welcome back, ${userName}. Last time we explored ${recentInterest}. Shall we continue, or discover something new?`;
+    } else if (userName && userProfile.isReturningUser) {
+      return `Welcome back, ${userName}. What shall we explore today?`;
     } else if (userName) {
-      // Known user, first conversation
       return `Hello ${userName}. I'm Vic Keegan. What corner of London's history shall we explore?`;
     } else {
-      // Anonymous user
       return "Hello. I'm Vic Keegan. How can I help?";
     }
   })();
