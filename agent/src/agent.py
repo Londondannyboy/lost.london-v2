@@ -688,6 +688,7 @@ async def get_current_user_name(ctx: RunContext[VICDeps]) -> dict:
 # =============================================================================
 
 app = FastAPI(title="VIC - Lost London Agent")
+print("[VIC] DEPLOY VERSION: 2026-01-07-v3", file=sys.stderr)
 
 app.add_middleware(
     CORSMiddleware,
