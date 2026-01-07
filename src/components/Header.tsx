@@ -36,22 +36,12 @@ export function Header() {
 
           {/* Right side - Auth buttons ALWAYS visible */}
           <div className="flex items-center gap-2">
-            {/* Desktop nav links */}
-            <nav className="hidden md:flex items-center gap-1 mr-4">
-              <Link
-                href="/"
-                className={`px-3 py-2 text-sm transition-colors ${
-                  pathname === '/'
-                    ? 'text-white bg-white/10'
-                    : 'text-gray-300 hover:text-white hover:bg-white/5'
-                }`}
-              >
-                Talk to VIC
-              </Link>
+            {/* Nav links - show key links on all sizes */}
+            <nav className="flex items-center gap-1 mr-2 md:mr-4">
               {session?.user && (
                 <Link
                   href="/dashboard"
-                  className={`px-3 py-2 text-sm transition-colors ${
+                  className={`px-2 md:px-3 py-2 text-xs md:text-sm transition-colors ${
                     pathname === '/dashboard'
                       ? 'text-white bg-white/10'
                       : 'text-gray-300 hover:text-white hover:bg-white/5'
@@ -61,14 +51,14 @@ export function Header() {
                 </Link>
               )}
               <Link
-                href="/profile"
-                className={`px-3 py-2 text-sm transition-colors ${
-                  pathname === '/profile'
+                href="/articles"
+                className={`hidden sm:block px-2 md:px-3 py-2 text-xs md:text-sm transition-colors ${
+                  pathname === '/articles'
                     ? 'text-white bg-white/10'
                     : 'text-gray-300 hover:text-white hover:bg-white/5'
                 }`}
               >
-                My Profile
+                Articles
               </Link>
             </nav>
 
@@ -147,6 +137,13 @@ export function Header() {
                 My History
               </Link>
             )}
+            <Link
+              href="/articles"
+              className={`block px-4 py-2 ${pathname === '/articles' ? 'text-white bg-white/10' : 'text-gray-300'}`}
+              onClick={() => setMenuOpen(false)}
+            >
+              Browse Articles
+            </Link>
             <Link
               href="/profile"
               className={`block px-4 py-2 ${pathname === '/profile' ? 'text-white bg-white/10' : 'text-gray-300'}`}
