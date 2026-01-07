@@ -1292,20 +1292,21 @@ from Roman London to Victorian music halls. Would you like to hear about any par
             dynamic_prompt = build_system_prompt(user_context)
 
             # Create a temporary agent with the dynamic prompt
+            # Use Groq for faster voice responses (~10x faster than Gemini)
             temp_agent = Agent(
-                'google-gla:gemini-2.0-flash',
+                'groq:llama-3.1-8b-instant',
                 deps_type=VICDeps,
                 system_prompt=dynamic_prompt,
                 retries=2,
             )
 
-            # Run the agent with context
+            # Run the agent with context - shorter for voice (faster TTS)
             prompt = f"""SOURCE MATERIAL:
 {context}
 
 USER QUESTION: {user_msg}
 
-Remember: ONLY use information from the source material above. Go into DEPTH (150-250 words)."""
+Respond in 2-3 sentences. Use ONLY the source material. Be engaging."""
 
             result = await temp_agent.run(prompt, deps=deps)
             response_text = result.output
