@@ -121,13 +121,20 @@ async def search_articles_hybrid(
                 r.vector_score,
                 r.vector_rank,
                 r.keyword_rank,
-                COALESCE(a.featured_image_url, a2.featured_image_url) as hero_image_url,
-                COALESCE(a.slug, a2.slug) as slug
+                COALESCE(a.featured_image_url, a2.featured_image_url, a3.featured_image_url) as hero_image_url,
+                COALESCE(a.slug, a2.slug, a3.slug) as slug
             FROM rrf_combined r
             JOIN knowledge_chunks kc ON kc.id = r.id
+            -- Exact title match
             LEFT JOIN articles a ON a.title = kc.title
+            -- Partial title match (chunk contains article title or vice versa)
             LEFT JOIN articles a2 ON LOWER(kc.title) LIKE LOWER('%' || a2.title || '%')
                                   OR LOWER(a2.title) LIKE LOWER('%' || LEFT(kc.title, 40) || '%')
+            -- Section-style chunks: extract base topic and match against article titles
+            -- e.g., "Thorney Island - Section 67" -> match articles containing "Thorney Island"
+            LEFT JOIN articles a3 ON
+                kc.title LIKE '% - Section%' AND
+                LOWER(a3.title) LIKE '%' || LOWER(SPLIT_PART(kc.title, ' - Section', 1)) || '%'
             ORDER BY r.rrf_score DESC
             LIMIT $3
         """, embedding_json, query_text.lower(), limit)
