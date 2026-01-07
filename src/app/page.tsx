@@ -1,7 +1,7 @@
 "use client";
 
 import { CopilotSidebar } from "@copilotkit/react-ui";
-import { useRenderToolCall, useCopilotChat } from "@copilotkit/react-core";
+import { useRenderToolCall, useCopilotChat, useCopilotReadable } from "@copilotkit/react-core";
 import { Role, TextMessage } from "@copilotkit/runtime-client-gql";
 import { VoiceInput } from "@/components/voice-input";
 import { ArticleGrid } from "@/components/generative-ui/ArticleGrid";
@@ -95,6 +95,20 @@ export default function Home() {
     }
     fetchUserContext();
   }, [user?.id]);
+
+  // Get user's first name for personalization
+  const userName = userProfile.preferred_name || user?.name?.split(' ')[0] || user?.name;
+
+  // Provide user context to CopilotKit agent
+  useCopilotReadable({
+    description: "Current user information for personalization",
+    value: {
+      userId: user?.id || null,
+      userName: userName || null,
+      isReturningUser: userProfile.isReturningUser || false,
+      recentInterests: userProfile.facts?.slice(0, 5) || [],
+    },
+  });
 
   // Handle voice messages - forward to CopilotKit and store to Zep
   // Voice → onMessage → appendMessage → Pydantic AI Agent → useRenderToolCall → Generative UI
@@ -202,14 +216,35 @@ export default function Home() {
     },
   });
 
+  // Build dynamic instructions with user context
+  const instructions = `You are VIC (Vic Keegan), a warm London historian with 370+ articles. Help users explore London's hidden history.
+
+## CURRENT USER CONTEXT
+${userName ? `The user's name is "${userName}". Use their name occasionally (not every message).` : 'The user has not provided their name yet.'}
+${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly and reference past conversations.' : 'This may be a new user.'}
+${userProfile.facts?.length ? `User's recent interests: ${userProfile.facts.slice(0, 3).join(', ')}` : ''}
+
+## CRITICAL RULES
+- NEVER say "I am a language model" or "I don't have access to personal information"
+- You ARE Vic Keegan. Stay in character always.
+- If asked "what is my name": ${userName ? `Answer "Your name is ${userName}!"` : 'Say "I don\'t believe you\'ve told me your name yet. What should I call you?"'}
+- If asked about yourself: "I'm Vic Keegan, London historian and author of the Lost London books"
+- ALWAYS use the search_lost_london tool when users ask about any London topic
+- Use show_map for locations, show_timeline for eras, show_books when asked about your books`;
+
+  // Build personalized initial message
+  const initialMessage = userName
+    ? `Hello ${userName}! I'm VIC, your guide to London's hidden history. Ask me about Thorney Island, the Royal Aquarium, Victorian London, or any corner of this ancient city. You can type here or tap the microphone below to speak.`
+    : "Hello! I'm VIC, your guide to London's hidden history. Ask me about Thorney Island, the Royal Aquarium, Victorian London, or any corner of this ancient city. You can type here or tap the microphone below to speak.";
+
   return (
     <CopilotSidebar
       defaultOpen={true}
       clickOutsideToClose={false}
-      instructions="You are VIC (Vic Keegan), a warm London historian with 370+ articles. Help users explore London's hidden history. ALWAYS use the search_lost_london tool when users ask about any topic. Use show_map for locations, show_timeline for eras, and show_books when asked about your books."
+      instructions={instructions}
       labels={{
         title: "VIC - London Historian",
-        initial: "Hello! I'm VIC, your guide to London's hidden history. Ask me about Thorney Island, the Royal Aquarium, Victorian London, or any corner of this ancient city. You can type here or tap the microphone below to speak.",
+        initial: initialMessage,
       }}
       className="border-l border-stone-200"
     >
