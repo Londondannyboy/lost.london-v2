@@ -205,3 +205,46 @@ async def get_user_preferred_name(user_id: str) -> Optional[str]:
     except Exception as e:
         print(f"[VIC DB] Error looking up user name: {e}", file=sys.stderr)
         return None
+
+
+async def get_topic_image(query: str) -> Optional[str]:
+    """
+    Look up a topic image using the topic_images table.
+
+    Uses phonetic-aware keyword search for robust matching.
+    The topic_images table includes phonetic variants like:
+    - "thorney" -> ["thorny", "fawny", "fawney", "fourney", ...]
+    - "aquarium" -> ["aquarim", "aquariam", ...]
+
+    Args:
+        query: The topic or search query
+
+    Returns:
+        Image URL if found, None otherwise
+    """
+    try:
+        async with get_connection() as conn:
+            # Search for any word in the query matching topic_keywords
+            query_words = query.lower().split()
+
+            # Try each word until we find a match
+            for word in query_words:
+                if len(word) < 3:
+                    continue
+
+                result = await conn.fetchrow("""
+                    SELECT image_url
+                    FROM topic_images
+                    WHERE $1 = ANY(topic_keywords)
+                    LIMIT 1
+                """, word)
+
+                if result:
+                    print(f"[VIC DB] Found topic image for '{word}': {result['image_url'][:50]}...", file=sys.stderr)
+                    return result['image_url']
+
+            print(f"[VIC DB] No topic image found for query: {query}", file=sys.stderr)
+            return None
+    except Exception as e:
+        print(f"[VIC DB] Error looking up topic image: {e}", file=sys.stderr)
+        return None

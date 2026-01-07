@@ -18,6 +18,7 @@ from .tools import (
     extract_location_from_content,
     extract_era_from_content,
 )
+from .database import get_topic_image
 from .models import MapLocation, TimelineEvent
 
 
@@ -392,13 +393,19 @@ async def surface_topic_context(ctx: RunContext[LibrarianDeps], topic: str) -> d
                 response["timeline_events"] = events
                 break
 
-    # 5. Extract hero image from top article
+    # 5. Extract hero image from top article OR fallback to topic_images table
     hero_img = getattr(top_article, 'hero_image_url', None)
     if hero_img:
         response["hero_image"] = hero_img
-        print(f"[Librarian] Hero image set: {hero_img[:50]}...", file=sys.stderr)
+        print(f"[Librarian] Hero image from article: {hero_img[:50]}...", file=sys.stderr)
     else:
-        print(f"[Librarian] No hero image found for top article", file=sys.stderr)
+        # Fallback: look up in topic_images table (phonetic-aware search)
+        hero_img = await get_topic_image(topic)
+        if hero_img:
+            response["hero_image"] = hero_img
+            print(f"[Librarian] Hero image from topic_images: {hero_img[:50]}...", file=sys.stderr)
+        else:
+            print(f"[Librarian] No hero image found for topic: {topic}", file=sys.stderr)
 
     # 6. Create brief summary - be descriptive!
     parts = [f"I found {len(article_cards)} articles about {topic}."]
