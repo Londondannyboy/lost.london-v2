@@ -10,6 +10,7 @@ import { LocationMap } from "@/components/generative-ui/LocationMap";
 import { Timeline } from "@/components/generative-ui/Timeline";
 import { BookDisplay } from "@/components/generative-ui/BookDisplay";
 import { TopicContext } from "@/components/generative-ui/TopicContext";
+import { TopicImage } from "@/components/generative-ui/TopicImage";
 import { LibrarianMessage, LibrarianThinking } from "@/components/LibrarianAvatar";
 import { CustomUserMessage, ChatUserContext } from "@/components/ChatMessages";
 import { useCallback, useEffect, useState, useRef } from "react";
@@ -392,6 +393,22 @@ export default function Home() {
               timeline_events={uiData?.timeline_events}
               hero_image={uiData?.hero_image}
             />
+          </>
+        );
+      }
+
+      // TopicImage - single image display (for "show me image of X")
+      if (uiComponent === "TopicImage" && uiData?.hero_image) {
+        return (
+          <>
+            <BackgroundUpdater imageUrl={uiData.hero_image} />
+            <LibrarianMessage brief={uiData?.brief}>
+              <TopicImage
+                query={uiData?.query || ""}
+                hero_image={uiData.hero_image}
+                brief={uiData?.brief}
+              />
+            </LibrarianMessage>
           </>
         );
       }

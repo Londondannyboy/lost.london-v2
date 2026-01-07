@@ -315,6 +315,39 @@ async def surface_books(ctx: RunContext[LibrarianDeps]) -> dict:
 
 
 @librarian_agent.tool
+async def surface_image(ctx: RunContext[LibrarianDeps], topic: str) -> dict:
+    """
+    Surface an image for a topic.
+
+    Use this when user asks "show me an image of X", "image of X", "picture of X".
+
+    Args:
+        topic: The topic to find an image for
+    """
+    print(f"[Librarian] Looking up image for: {topic}", file=sys.stderr)
+
+    # Use phonetic-aware topic_images table
+    image_url = await get_topic_image(topic)
+
+    if image_url:
+        return {
+            "found": True,
+            "query": topic,
+            "hero_image": image_url,
+            "ui_component": "TopicImage",
+            "speaker": "librarian",
+            "brief": f"Here's a historic image of {topic}.",
+        }
+
+    return {
+        "found": False,
+        "query": topic,
+        "speaker": "librarian",
+        "brief": f"I couldn't find an image of {topic} in my archives.",
+    }
+
+
+@librarian_agent.tool
 async def surface_topic_context(ctx: RunContext[LibrarianDeps], topic: str) -> dict:
     """
     Surface COMPLETE context for a topic: articles, map (if location known), timeline (if era known).
