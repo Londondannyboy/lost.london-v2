@@ -121,11 +121,13 @@ async def search_articles_hybrid(
                 r.vector_score,
                 r.vector_rank,
                 r.keyword_rank,
-                a.featured_image_url as hero_image_url,
-                a.slug
+                COALESCE(a.featured_image_url, a2.featured_image_url) as hero_image_url,
+                COALESCE(a.slug, a2.slug) as slug
             FROM rrf_combined r
             JOIN knowledge_chunks kc ON kc.id = r.id
             LEFT JOIN articles a ON a.title = kc.title
+            LEFT JOIN articles a2 ON LOWER(kc.title) LIKE LOWER('%' || a2.title || '%')
+                                  OR LOWER(a2.title) LIKE LOWER('%' || LEFT(kc.title, 40) || '%')
             ORDER BY r.rrf_score DESC
             LIMIT $3
         """, embedding_json, query_text.lower(), limit)

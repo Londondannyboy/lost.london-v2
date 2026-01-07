@@ -51,6 +51,17 @@ PHONETIC_CORRECTIONS: dict[str, str] = {
     "forny": "thorney",
     "thorn ey": "thorney",
     "forn ey": "thorney",
+    "fourney": "thorney",
+    "fourny": "thorney",
+    "forn": "thorney",
+    "phornee": "thorney",
+    # Common truncated queries - expand to full topic
+    "images of": "show me images of london history",
+    "pictures of": "show me images of london history",
+    "photos of": "show me images of london history",
+    "do you have images": "show me images of thorney island",
+    "do you have any images": "show me images of thorney island",
+    "any images": "images of london history",
     # Tyburn
     "tie burn": "tyburn",
     "tieburn": "tyburn",

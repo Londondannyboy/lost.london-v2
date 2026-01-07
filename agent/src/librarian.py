@@ -346,11 +346,15 @@ async def surface_topic_context(ctx: RunContext[LibrarianDeps], topic: str) -> d
         location = extract_location_from_content(article.content, article.title)
         era = extract_era_from_content(article.content)
 
+        # Log image availability for debugging
+        img_url = getattr(article, 'hero_image_url', None)
+        print(f"[Librarian] Article '{article.title[:40]}...' - image: {img_url[:50] if img_url else 'NONE'}", file=sys.stderr)
+
         article_cards.append({
             "id": article.id,
             "title": article.title,
             "excerpt": article.content[:200] + "...",
-            "hero_image_url": article.hero_image_url if hasattr(article, 'hero_image_url') else None,
+            "hero_image_url": img_url,
             "score": article.score,
             "location": location.model_dump() if location else None,
             "era": era,
@@ -389,16 +393,28 @@ async def surface_topic_context(ctx: RunContext[LibrarianDeps], topic: str) -> d
                 break
 
     # 5. Extract hero image from top article
-    if hasattr(top_article, 'hero_image_url') and top_article.hero_image_url:
-        response["hero_image"] = top_article.hero_image_url
+    hero_img = getattr(top_article, 'hero_image_url', None)
+    if hero_img:
+        response["hero_image"] = hero_img
+        print(f"[Librarian] Hero image set: {hero_img[:50]}...", file=sys.stderr)
+    else:
+        print(f"[Librarian] No hero image found for top article", file=sys.stderr)
 
-    # 6. Create brief summary
+    # 6. Create brief summary - be descriptive!
     parts = [f"I found {len(article_cards)} articles about {topic}."]
+
+    # Mention if we have images
+    articles_with_images = sum(1 for a in article_cards if a.get("hero_image_url"))
+    if articles_with_images > 0:
+        parts.append(f"{articles_with_images} include historic images.")
+
     if location:
-        parts.append(f"It was located at {location.name}.")
+        parts.append(f"Location: {location.name}.")
     if era:
-        parts.append(f"This was during the {era} era.")
-    parts.append("VIC can tell you more about this.")
+        parts.append(f"Era: {era}.")
+
+    # List the top article
+    parts.append(f"Top result: '{top_article.title}'.")
 
     response["brief"] = " ".join(parts)
     ctx.deps.current_topic = topic
