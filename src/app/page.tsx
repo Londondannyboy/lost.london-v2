@@ -256,6 +256,8 @@ export default function Home() {
                 onMessage={handleVoiceMessage}
                 userId={user?.id}
                 userName={userProfile.preferred_name || user?.name?.split(' ')[0] || user?.name}
+                isReturningUser={userProfile.isReturningUser}
+                userFacts={userProfile.facts}
               />
 
               <p className="text-[#d4c4a8]/60 text-xs mt-2">

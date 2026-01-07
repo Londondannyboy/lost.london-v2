@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { authClient } from '@/lib/auth/client';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { InterestGraph } from '@/components/InterestGraph';
 
 interface ZepFact {
   fact?: string;
@@ -14,11 +15,17 @@ interface UserProfile {
   favorite_topics?: string[];
 }
 
+interface InterestWithCount {
+  topic: string;
+  count: number;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const { data: session, isPending } = authClient.useSession();
   const [zepFacts, setZepFacts] = useState<string[]>([]);
   const [interests, setInterests] = useState<string[]>([]);
+  const [interestsWithCounts, setInterestsWithCounts] = useState<InterestWithCount[]>([]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -49,6 +56,32 @@ export default function DashboardPage() {
           .filter(Boolean);
         setZepFacts(facts);
         setInterests(data.interests || []);
+
+        // Build interests with counts from facts
+        const topicCounts = new Map<string, number>();
+        facts.forEach((fact: string) => {
+          // Extract topics from facts
+          const topicMatches = fact.match(/interested in (.+)|discussed (.+)|asked about (.+)|explored (.+)/i);
+          if (topicMatches) {
+            const topic = (topicMatches[1] || topicMatches[2] || topicMatches[3] || topicMatches[4])
+              .split(',')[0].trim();
+            if (topic && topic.length > 2) {
+              topicCounts.set(topic, (topicCounts.get(topic) || 0) + 1);
+            }
+          }
+        });
+
+        // Also count from interests array
+        (data.interests || []).forEach((interest: string) => {
+          topicCounts.set(interest, (topicCounts.get(interest) || 0) + 1);
+        });
+
+        const countsArray: InterestWithCount[] = Array.from(topicCounts.entries())
+          .map(([topic, count]) => ({ topic, count }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 10);
+
+        setInterestsWithCounts(countsArray);
       }
     } catch (error) {
       console.error('Failed to fetch Zep data:', error);
@@ -130,6 +163,14 @@ export default function DashboardPage() {
           </div>
         ) : (
           <>
+            {/* Interest Graph */}
+            {interestsWithCounts.length > 0 && (
+              <InterestGraph
+                interests={interestsWithCounts}
+                userName={profile?.preferred_name || session?.user?.name?.split(' ')[0]}
+              />
+            )}
+
             {/* Interests Section */}
             {interests.length > 0 && (
               <div className="bg-white border border-gray-200 rounded-xl p-6 mb-6">
