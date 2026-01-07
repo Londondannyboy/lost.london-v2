@@ -43,6 +43,9 @@ function SmartAssistantMessage({ message }: { message?: { generativeUI?: () => R
   // Get generative UI from tools (Librarian's output)
   const generativeUI = message?.generativeUI?.();
 
+  // Check if generativeUI actually has content (not null, undefined, or empty)
+  const hasValidGenerativeUI = generativeUI !== null && generativeUI !== undefined;
+
   // Get VIC's text content - clean it up
   const rawContent = typeof message?.content === "string" ? message.content : "";
   // Filter out empty, whitespace-only, or tool call artifacts
@@ -52,8 +55,8 @@ function SmartAssistantMessage({ message }: { message?: { generativeUI?: () => R
     !textContent.includes("tool_call") &&
     !textContent.includes("delegate_to");
 
-  // If there's tool UI (Librarian), show BOTH VIC's intro AND Librarian's content
-  if (generativeUI) {
+  // If there's tool UI (Librarian) with actual content, show BOTH VIC's intro AND Librarian's content
+  if (hasValidGenerativeUI) {
     return (
       <div className="space-y-3 mb-4">
         {/* VIC's brief intro if present */}
@@ -75,7 +78,7 @@ function SmartAssistantMessage({ message }: { message?: { generativeUI?: () => R
           </div>
         )}
 
-        {/* Librarian's research results */}
+        {/* Librarian's research results - only show if there's actual content */}
         <div className="flex gap-3">
           <div className="flex-shrink-0">
             <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-amber-300">
@@ -129,6 +132,7 @@ function BackgroundUpdater({ imageUrl }: { imageUrl: string }) {
   const { setBackground } = useContext(BackgroundContext);
   useEffect(() => {
     if (imageUrl) {
+      console.log('[BackgroundUpdater] Setting background to:', imageUrl);
       setBackground(imageUrl);
     }
   }, [imageUrl, setBackground]);
@@ -369,6 +373,9 @@ export default function Home() {
       // Render the appropriate UI component based on what Librarian returned
       const uiComponent = result?.ui_component;
       const uiData = result?.ui_data || result;
+
+      // Debug: Log what we received
+      console.log('[Librarian UI] Result:', { uiComponent, hasUiData: !!result?.ui_data, heroImage: uiData?.hero_image });
 
       // TopicContext is rendered directly (it includes its own Librarian header)
       if (uiComponent === "TopicContext") {
