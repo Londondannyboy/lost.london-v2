@@ -165,6 +165,7 @@ async def search_articles(query: str, limit: int = 5) -> SearchResults:
             title=r["title"],
             content=r["content"],
             score=r["score"],
+            hero_image_url=r.get("hero_image_url"),
         )
         for r in results
     ]
@@ -225,7 +226,7 @@ def extract_location_from_content(content: str, title: str) -> Optional[MapLocat
 
 
 def extract_era_from_content(content: str) -> Optional[str]:
-    """Extract historical era from article content."""
+    """Extract historical era from article content based on keywords and dates."""
     ERA_KEYWORDS = {
         "victorian": "Victorian Era (1837-1901)",
         "georgian": "Georgian Era (1714-1830)",
@@ -239,8 +240,32 @@ def extract_era_from_content(content: str) -> Optional[str]:
     }
 
     content_lower = content.lower()
+
+    # First check for explicit era keywords
     for keyword, era in ERA_KEYWORDS.items():
         if keyword in content_lower:
             return era
+
+    # If no explicit keyword, try to detect era from years mentioned
+    # Look for 4-digit years in the content
+    years = re.findall(r'\b(1[0-9]{3})\b', content)
+    if years:
+        # Convert to integers and find the most common era
+        year_ints = [int(y) for y in years]
+        avg_year = sum(year_ints) // len(year_ints)
+
+        # Map average year to era
+        if 1837 <= avg_year <= 1901:
+            return "Victorian Era (1837-1901)"
+        elif 1714 <= avg_year < 1837:
+            return "Georgian Era (1714-1830)"
+        elif 1901 < avg_year <= 1910:
+            return "Edwardian Era (1901-1910)"
+        elif 1603 <= avg_year < 1714:
+            return "Stuart Period (1603-1714)"
+        elif 1485 <= avg_year < 1603:
+            return "Tudor Period (1485-1603)"
+        elif 500 <= avg_year < 1485:
+            return "Medieval Period (500-1500)"
 
     return None

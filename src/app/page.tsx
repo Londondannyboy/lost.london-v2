@@ -11,8 +11,8 @@ import { Timeline } from "@/components/generative-ui/Timeline";
 import { BookDisplay } from "@/components/generative-ui/BookDisplay";
 import { TopicContext } from "@/components/generative-ui/TopicContext";
 import { LibrarianMessage, LibrarianThinking } from "@/components/LibrarianAvatar";
-import { CustomUserMessage, CustomAssistantMessage, ChatUserContext } from "@/components/ChatMessages";
-import { useCallback, useEffect, useState } from "react";
+import { CustomUserMessage, ChatUserContext } from "@/components/ChatMessages";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { authClient } from "@/lib/auth/client";
 
 // Loading component for tool results
@@ -31,11 +31,65 @@ function TopicButton({ topic, onClick }: { topic: string; onClick: (topic: strin
   return (
     <button
       onClick={() => onClick(topic)}
-      className="px-4 py-2 text-sm rounded-full transition-all duration-200 bg-white/10 text-white/80 hover:bg-[#f4ead5] hover:text-[#2a231a] hover:scale-105 cursor-pointer border border-white/20 hover:border-[#8b6914]"
+      className="px-5 py-2.5 text-sm font-medium rounded-full transition-all duration-200 bg-[#1a1612]/60 text-white hover:bg-[#f4ead5] hover:text-[#2a231a] hover:scale-105 cursor-pointer border-2 border-white/40 hover:border-[#8b6914] backdrop-blur-sm shadow-lg"
     >
       {topic}
     </button>
   );
+}
+
+// Librarian-only assistant message - suppresses VIC text, only shows tool UI
+// Uses same layout as user/VIC messages for visual consistency
+function LibrarianOnlyAssistant({ message }: { message?: { generativeUI?: () => React.ReactNode; content?: string } }) {
+  // Only render the generative UI from tools (Librarian's output)
+  // Suppress VIC's text responses - his voice handles that
+  const generativeUI = message?.generativeUI?.();
+
+  // If there's tool UI, show it with proper layout
+  if (generativeUI) {
+    return (
+      <div className="flex gap-3 mb-4">
+        {/* Librarian Avatar - same size/position as user/VIC avatars */}
+        <div className="flex-shrink-0">
+          <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-amber-300">
+            <img
+              src="/London Librarian Avatar 1.png"
+              alt="London Librarian"
+              className="w-full h-full object-cover"
+            />
+          </div>
+        </div>
+
+        {/* Message Content */}
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-sm font-medium text-amber-700">London Librarian</span>
+          </div>
+          <div className="bg-amber-50/50 rounded-lg rounded-tl-none p-3 text-stone-800 border-l-2 border-amber-200">
+            {generativeUI}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // No text output for VIC - voice is the response
+  return null;
+}
+
+// Context for sharing background setter with render callbacks
+import { createContext, useContext } from 'react';
+const BackgroundContext = createContext<{ setBackground: (url: string | null) => void }>({ setBackground: () => {} });
+
+// Component to set background when mounted (used in render callbacks)
+function BackgroundUpdater({ imageUrl }: { imageUrl: string }) {
+  const { setBackground } = useContext(BackgroundContext);
+  useEffect(() => {
+    if (imageUrl) {
+      setBackground(imageUrl);
+    }
+  }, [imageUrl, setBackground]);
+  return null;
 }
 
 // Helper to store messages to Zep memory
@@ -72,6 +126,9 @@ export default function Home() {
     isReturningUser?: boolean;
     facts?: string[];
   }>({});
+
+  // Dynamic background based on current topic
+  const [topicBackground, setTopicBackground] = useState<string | null>(null);
 
   // Fetch user profile and Zep context on mount
   useEffect(() => {
@@ -273,15 +330,19 @@ export default function Home() {
       // TopicContext is rendered directly (it includes its own Librarian header)
       if (uiComponent === "TopicContext") {
         return (
-          <TopicContext
-            query={uiData?.query || ""}
-            brief={uiData?.brief}
-            articles={uiData?.articles}
-            location={uiData?.location}
-            era={uiData?.era}
-            timeline_events={uiData?.timeline_events}
-            hero_image={uiData?.hero_image}
-          />
+          <>
+            {/* Update hero background when topic has an image */}
+            {uiData?.hero_image && <BackgroundUpdater imageUrl={uiData.hero_image} />}
+            <TopicContext
+              query={uiData?.query || ""}
+              brief={uiData?.brief}
+              articles={uiData?.articles}
+              location={uiData?.location}
+              era={uiData?.era}
+              timeline_events={uiData?.timeline_events}
+              hero_image={uiData?.hero_image}
+            />
+          </>
         );
       }
 
@@ -398,54 +459,58 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
     userImage: (user as any)?.image || undefined,
   };
 
+  // Background context value - memoized to prevent re-renders
+  const backgroundContextValue = { setBackground: setTopicBackground };
+
   return (
+    <BackgroundContext.Provider value={backgroundContextValue}>
     <ChatUserContext.Provider value={chatUserContextValue}>
       <CopilotSidebar
         defaultOpen={true}
         clickOutsideToClose={false}
         instructions={instructions}
         labels={{
-          title: "VIC - London Historian",
+          title: "London Librarian",
           initial: initialMessage,
         }}
         className="border-l border-stone-200"
         UserMessage={CustomUserMessage}
-        AssistantMessage={CustomAssistantMessage}
+        AssistantMessage={LibrarianOnlyAssistant}
       >
       {/* Main Content - Voice-First Hero */}
       <div className="bg-white text-black min-h-screen">
-        {/* Hero Section */}
-        <section className="relative min-h-[60vh] flex items-center justify-center bg-[#1a1612]">
-          {/* Background */}
+        {/* Hero Section - Full Screen */}
+        <section className="relative min-h-screen flex items-center justify-center bg-[#1a1612]">
+          {/* Background - Dynamic or default map */}
           <div className="absolute inset-0 z-0">
             <img
-              src="/London Map with River.jpg"
+              src={topicBackground || "/London Map with River.jpg"}
               alt=""
-              className="w-full h-full object-cover opacity-40"
-              style={{ filter: 'sepia(30%) contrast(1.1)' }}
+              className="w-full h-full object-cover transition-all duration-1000"
+              style={{ opacity: topicBackground ? 0.5 : 0.4, filter: 'sepia(30%) contrast(1.1)' }}
             />
-            <div className="absolute inset-0 bg-gradient-to-b from-[#1a1612]/60 via-transparent to-[#1a1612]/80" />
+            <div className="absolute inset-0 bg-gradient-to-b from-[#1a1612]/70 via-[#1a1612]/40 to-[#1a1612]/90" />
           </div>
 
-          <div className="relative z-10 max-w-4xl mx-auto px-4 py-12 text-center">
-            <h1 className="text-4xl md:text-6xl font-bold tracking-tight mb-4 text-[#f4ead5]">
+          <div className="relative z-10 max-w-4xl mx-auto px-4 py-16 text-center">
+            <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-4 text-[#f4ead5]">
               Lost London
             </h1>
-            <p className="text-lg md:text-xl text-[#d4c4a8] mb-8 max-w-2xl mx-auto">
+            <p className="text-xl md:text-2xl text-[#d4c4a8] mb-10 max-w-2xl mx-auto">
               AI-powered voice guide to 2,000 years of hidden history
             </p>
 
             {/* VIC Avatar + Voice */}
-            <div className="flex flex-col items-center mb-6">
-              <div className="relative mb-4">
-                <div className="w-32 h-32 md:w-40 md:h-40 rounded-full overflow-hidden shadow-2xl border-4 border-[#f4ead5]/20">
+            <div className="flex flex-col items-center mb-8">
+              <div className="relative mb-6">
+                <div className="w-36 h-36 md:w-44 md:h-44 rounded-full overflow-hidden shadow-2xl border-4 border-[#f4ead5]/30">
                   <img
                     src="/vic-avatar.jpg"
                     alt="VIC - Your London History Guide"
                     className="w-full h-full object-cover"
                   />
                 </div>
-                <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-[#f4ead5] text-[#2a231a] text-xs px-3 py-1 rounded-full font-medium">
+                <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-[#f4ead5] text-[#2a231a] text-sm px-4 py-1.5 rounded-full font-semibold shadow-lg">
                   VIC
                 </div>
               </div>
@@ -459,15 +524,15 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
                 userFacts={userProfile.facts}
               />
 
-              <p className="text-[#d4c4a8]/60 text-xs mt-2">
-                Voice synced with chat →
+              <p className="text-[#d4c4a8]/70 text-sm mt-3">
+                Tap to speak with VIC →
               </p>
             </div>
 
-            {/* Topic Pills */}
-            <div className="w-full max-w-md mx-auto">
-              <p className="text-white/50 text-xs mb-2">Quick topics:</p>
-              <div className="flex flex-wrap justify-center gap-2">
+            {/* Topic Pills - White text */}
+            <div className="w-full max-w-lg mx-auto">
+              <p className="text-white/70 text-sm mb-3">Quick topics:</p>
+              <div className="flex flex-wrap justify-center gap-3">
                 {['Thorney Island', 'Royal Aquarium', 'Victorian Era', 'Hidden Rivers', 'Roman London'].map((topic) => (
                   <TopicButton key={topic} topic={topic} onClick={handleTopicClick} />
                 ))}
@@ -571,5 +636,6 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
       </div>
       </CopilotSidebar>
     </ChatUserContext.Provider>
+    </BackgroundContext.Provider>
   );
 }

@@ -4,7 +4,6 @@ import { useState } from "react";
 import { ArticleCard } from "./ArticleCard";
 import { LocationMap } from "./LocationMap";
 import { Timeline } from "./Timeline";
-import { LibrarianAvatar } from "../LibrarianAvatar";
 
 interface Article {
   id: string;
@@ -69,28 +68,17 @@ export function TopicContext({
   ].filter((tab) => tab.available);
 
   return (
-    <div className="space-y-4 my-4">
-      {/* Librarian header */}
-      <div className="flex items-start gap-3">
-        <LibrarianAvatar speaking size="sm" showLabel />
-        <div className="flex-1">
-          <span className="text-sm text-amber-600 flex items-center gap-2">
-            <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
-            Research complete
-          </span>
-        </div>
-      </div>
-
+    <div className="space-y-4">
       {/* Brief summary */}
       {brief && (
-        <p className="text-sm text-stone-600 pl-10 border-l-2 border-amber-200 italic">
+        <p className="text-sm text-stone-600 italic">
           {brief}
         </p>
       )}
 
       {/* Hero image if available */}
       {hero_image && (
-        <div className="ml-10 rounded-lg overflow-hidden border border-stone-200 shadow-sm">
+        <div className="rounded-lg overflow-hidden border border-stone-200 shadow-sm">
           <img
             src={hero_image}
             alt={query}
@@ -104,7 +92,7 @@ export function TopicContext({
 
       {/* Tab navigation if we have multiple content types */}
       {tabs.length > 1 && (
-        <div className="flex gap-2 ml-10 border-b border-stone-200 pb-2">
+        <div className="flex gap-2 border-b border-stone-200 pb-2">
           {tabs.map((tab) => (
             <button
               key={tab.id}
@@ -122,7 +110,7 @@ export function TopicContext({
       )}
 
       {/* Content based on active tab */}
-      <div className="ml-10">
+      <div>
         {/* Articles */}
         {activeTab === "articles" && hasArticles && (
           <div className="space-y-4">
@@ -156,7 +144,7 @@ export function TopicContext({
 
       {/* Quick links to other content types */}
       {tabs.length > 1 && (
-        <div className="ml-10 flex items-center gap-2 text-xs text-stone-400">
+        <div className="flex items-center gap-2 text-xs text-stone-400">
           <span>Also available:</span>
           {tabs
             .filter((tab) => tab.id !== activeTab)

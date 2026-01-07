@@ -120,9 +120,12 @@ async def search_articles_hybrid(
                 r.rrf_score as score,
                 r.vector_score,
                 r.vector_rank,
-                r.keyword_rank
+                r.keyword_rank,
+                a.featured_image_url as hero_image_url,
+                a.slug
             FROM rrf_combined r
             JOIN knowledge_chunks kc ON kc.id = r.id
+            LEFT JOIN articles a ON a.title = kc.title
             ORDER BY r.rrf_score DESC
             LIMIT $3
         """, embedding_json, query_text.lower(), limit)
@@ -138,7 +141,7 @@ async def get_article_by_slug(slug: str) -> Optional[dict]:
     """Get a full article by its slug for detailed card display."""
     async with get_connection() as conn:
         result = await conn.fetchrow("""
-            SELECT id::text, title, content, slug, excerpt, hero_image_url
+            SELECT id::text, title, content, slug, excerpt, featured_image_url as hero_image_url
             FROM articles
             WHERE slug = $1
         """, slug)
@@ -151,7 +154,7 @@ async def get_articles_by_era(era_keywords: list[str], limit: int = 5) -> list[d
         # Build OR conditions for era keywords
         conditions = " OR ".join([f"LOWER(content) LIKE '%{kw.lower()}%'" for kw in era_keywords])
         query = f"""
-            SELECT id::text, title, content, slug, excerpt, hero_image_url
+            SELECT id::text, title, content, slug, excerpt, featured_image_url as hero_image_url
             FROM articles
             WHERE {conditions}
             LIMIT $1
