@@ -107,14 +107,11 @@ RULES:
         await connect({
           auth: { type: "accessToken", value: accessToken },
           configId: process.env.NEXT_PUBLIC_HUME_CONFIG_ID || "",
-          customSessionId,
           // Inject user context into session via system prompt
           sessionSettings: {
-            type: 'session_settings',
             systemPrompt,
-            customSessionId,
           },
-        });
+        } as any);
 
         // Don't auto-trigger "Hello!" - let Hume's greeting handle it
         // The system prompt has the opening line
