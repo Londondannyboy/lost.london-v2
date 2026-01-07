@@ -1566,7 +1566,8 @@ In this chat, keep it SHORT:
             if ui_data:
                 articles = ui_data.get('articles', [])
                 has_images = sum(1 for a in articles if a.get('hero_image_url'))
-                logger.info(f"[VIC CopilotKit] Librarian returned: ui_component={ui_component}, articles={len(articles)}, with_images={has_images}")
+                hero_img = ui_data.get('hero_image')
+                logger.info(f"[VIC CopilotKit] Librarian returned: ui_component={ui_component}, articles={len(articles)}, with_images={has_images}, hero_image={'YES: ' + hero_img[:50] if hero_img else 'NO'}")
             else:
                 logger.warning(f"[VIC CopilotKit] No UI data found from Librarian!")
 
