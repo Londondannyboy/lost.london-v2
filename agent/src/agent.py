@@ -544,6 +544,22 @@ async def clm_endpoint(request: Request):
             media_type="text/event-stream"
         )
 
+    # Identity/meta questions about VIC - handle before article search
+    identity_keywords = ["who are you", "what are you", "your name", "about yourself",
+                         "books have you written", "your books", "did you write",
+                         "tell me about you", "introduce yourself"]
+    is_identity_question = any(kw in normalized_query.lower() for kw in identity_keywords)
+
+    if is_identity_question:
+        response_text = """I'm Vic Keegan, London historian and author. I've written Lost London Volume 1 and Volume 2,
+plus my latest book Thorney: London's Forgotten Island, about the hidden island beneath Westminster.
+I've been researching London's hidden history for years, and I've got 372 articles covering everything
+from Roman London to Victorian music halls. Would you like to hear about any particular corner of London's past?"""
+        return StreamingResponse(
+            stream_sse_response(response_text.replace('\n', ' '), str(uuid.uuid4())),
+            media_type="text/event-stream"
+        )
+
     # Search for relevant articles
     try:
         results = await search_articles(normalized_query, limit=3)
