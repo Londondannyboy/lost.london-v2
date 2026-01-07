@@ -114,6 +114,12 @@ RULES:
 
         console.log('[VIC Session] Connected successfully');
 
+        // Auto-greet after connection - send a greeting trigger
+        // This tells Hume/CLM to speak the greeting
+        setTimeout(() => {
+          sendUserInput("speak your greeting");
+        }, 500);
+
       } catch (e) {
         console.error("Voice connect error:", e);
       } finally {
