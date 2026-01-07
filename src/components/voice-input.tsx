@@ -17,29 +17,20 @@ function VoiceButton({ onMessage, userId, userName, isReturningUser, userFacts }
   const [isPlaying, setIsPlaying] = useState(false);
   const lastSentMsgId = useRef<string | null>(null);
 
-  // Build system prompt with user context for Hume
+  // Build system prompt with user context for Hume (matches lost.london-app pattern)
   const buildSystemPrompt = () => {
-    let prompt = `You are VIC (Vic Keegan), a warm London historian and author.
+    // Format matches lost.london-app VoiceWidget.tsx
+    const topicsList = userFacts?.slice(0, 3).join(', ') || '';
 
-OPENING LINE (FIRST MESSAGE ONLY):
-`;
-    if (isReturningUser && userName) {
-      prompt += `"Welcome back to Lost London, ${userName}! Lovely to hear from you again. What shall we explore today?"`;
-    } else if (userName) {
-      prompt += `"Welcome to Lost London, ${userName}! I'm Vic Keegan, and I've spent years uncovering hidden history. What would you like to discover?"`;
-    } else {
-      prompt += `"Welcome to Lost London! I'm Vic Keegan, historian and author. Ask me anything about London's hidden history - I'm particularly passionate about Thorney Island, the forgotten island beneath Westminster."`;
-    }
+    return `USER_CONTEXT:
+name: ${userName || 'unknown'}
+${topicsList ? `recent_topics: ${topicsList}` : ''}
+status: ${isReturningUser ? `returning_user` : 'new_user'}
 
-    if (isReturningUser && userFacts && userFacts.length > 0) {
-      prompt += `\n\nUSER CONTEXT (what you remember about them):\n`;
-      userFacts.slice(0, 5).forEach(fact => {
-        prompt += `- ${fact}\n`;
-      });
-      prompt += `\nReference their interests naturally but don't be creepy about it.`;
-    }
-
-    prompt += `
+RETURNING_USER_GREETING:
+${isReturningUser && userName ? `This is ${userName}'s return visit. Greet them warmly by name: "Welcome back to Lost London, ${userName}!"` : ''}
+${!isReturningUser && userName ? `New user named ${userName}. Greet them: "Welcome to Lost London, ${userName}!"` : ''}
+${!userName ? `Unknown user. Greet them: "Welcome to Lost London! I'm Vic Keegan, historian and author."` : ''}
 
 IDENTITY:
 - You ARE Vic Keegan, real author of Lost London books
@@ -51,8 +42,6 @@ RULES:
 - Go into depth on topics (150-250 words)
 - End with a follow-up question
 - ONLY use information from your articles, never training knowledge`;
-
-    return prompt;
   };
 
   // Track if VIC is speaking
@@ -95,26 +84,35 @@ RULES:
         const res = await fetch("/api/hume-token");
         const { accessToken } = await res.json();
 
-        // Build system prompt with user context
+        // Build system prompt with user context (matches lost.london-app pattern)
         const systemPrompt = buildSystemPrompt();
-        console.log('[VIC Voice] Connecting with user context:', { userName, isReturningUser, factsCount: userFacts?.length });
+        const configId = process.env.NEXT_PUBLIC_HUME_CONFIG_ID || "";
 
-        // Build custom session ID for backend tracking
-        const customSessionId = userId
-          ? `${userId}|${userName || ''}`
+        // Session ID with name for backend tracking
+        const sessionIdWithName = userName
+          ? `${userName}|${userId || Date.now()}`
           : `anon_${Date.now()}`;
 
-        await connect({
-          auth: { type: "accessToken", value: accessToken },
-          configId: process.env.NEXT_PUBLIC_HUME_CONFIG_ID || "",
-          // Inject user context into session via system prompt
-          sessionSettings: {
-            systemPrompt,
-          },
-        } as any);
+        console.log('[VIC Session] ================================');
+        console.log('[VIC Session] userName:', userName);
+        console.log('[VIC Session] userId:', userId);
+        console.log('[VIC Session] isReturningUser:', isReturningUser);
+        console.log('[VIC Session] sessionIdWithName:', sessionIdWithName);
+        console.log('[VIC Session] systemPrompt:', systemPrompt.substring(0, 500));
+        console.log('[VIC Session] ================================');
 
-        // Don't auto-trigger "Hello!" - let Hume's greeting handle it
-        // The system prompt has the opening line
+        // Connect with sessionSettings (matches lost.london-app pattern exactly)
+        await connect({
+          auth: { type: 'accessToken' as const, value: accessToken },
+          configId: configId,
+          sessionSettings: {
+            type: 'session_settings' as const,
+            systemPrompt,
+            customSessionId: sessionIdWithName,
+          }
+        });
+
+        console.log('[VIC Session] Connected successfully');
 
       } catch (e) {
         console.error("Voice connect error:", e);
