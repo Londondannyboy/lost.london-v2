@@ -140,6 +140,100 @@ function BackgroundUpdater({ imageUrl }: { imageUrl: string }) {
   return null;
 }
 
+// Helper to extract topic from user query (for Zep storage)
+function extractTopicFromQuery(query: string): string | null {
+  const lowerQuery = query.toLowerCase();
+
+  // Common query patterns to extract topic from
+  const patterns = [
+    /tell me about (.+)/i,
+    /what (?:is|was|are|were) (?:the )?(.+)/i,
+    /(?:show|find) (?:me )?(?:an? )?(?:image|picture|photo) of (.+)/i,
+    /where (?:is|was) (?:the )?(.+)/i,
+    /(?:who|what) (?:is|was) (.+)/i,
+    /history of (.+)/i,
+    /learn about (.+)/i,
+    /explore (.+)/i,
+    /(.+?) history/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = query.match(pattern);
+    if (match && match[1]) {
+      // Clean up the extracted topic
+      let topic = match[1].trim()
+        .replace(/\?+$/, '')  // Remove trailing ?
+        .replace(/^the /i, '')  // Remove leading "the"
+        .replace(/please$/i, '')  // Remove trailing "please"
+        .trim();
+
+      // Only return if topic is meaningful (2+ words or known location)
+      if (topic.length >= 4) {
+        // Capitalize first letter of each word
+        return topic.split(' ')
+          .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+          .join(' ');
+      }
+    }
+  }
+
+  // Fallback: Check for known London topics in the query
+  const knownTopics = [
+    'thorney island', 'royal aquarium', 'tyburn', 'crystal palace',
+    'london bridge', 'tower of london', 'fleet street', 'southwark',
+    'westminster', 'thames', 'victorian', 'georgian', 'medieval',
+  ];
+
+  for (const topic of knownTopics) {
+    if (lowerQuery.includes(topic)) {
+      return topic.split(' ')
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
+    }
+  }
+
+  return null;
+}
+
+// Helper to store topic interest to Zep (for returning user context)
+async function storeTopicToZep(userId: string, topic: string, name?: string) {
+  if (!userId || !topic || topic.length < 3) return;
+  try {
+    await fetch('/api/zep/user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId,
+        action: 'topic_interest',
+        topic,
+        name,
+      }),
+    });
+    console.log('[Zep] Stored topic interest:', topic);
+  } catch (e) {
+    console.warn('[Zep] Failed to store topic:', e);
+  }
+}
+
+// Helper to store user profile to Zep
+async function storeUserProfileToZep(userId: string, name: string) {
+  if (!userId || !name) return;
+  try {
+    await fetch('/api/zep/user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId,
+        action: 'user_profile',
+        name,
+      }),
+    });
+    console.log('[Zep] Stored user profile:', name);
+  } catch (e) {
+    console.warn('[Zep] Failed to store profile:', e);
+  }
+}
+
 // Helper to store messages to Zep memory
 async function storeToZep(userId: string, message: string, role: "user" | "assistant", name?: string) {
   if (!userId || message.length < 5) return;
@@ -223,7 +317,7 @@ export default function Home() {
     initialState: { user: undefined },
   });
 
-  // Sync logged-in user to agent state
+  // Sync logged-in user to agent state and store profile to Zep
   useEffect(() => {
     if (user?.id && !agentState?.user?.id) {
       const userInfo = {
@@ -233,6 +327,12 @@ export default function Home() {
       };
       setAgentState(prev => ({ ...prev, user: userInfo }));
       console.log('[VIC] User synced to agent state:', userInfo);
+
+      // Store user profile to Zep for returning user recognition
+      const displayName = userName || user.name?.split(' ')[0];
+      if (displayName) {
+        storeUserProfileToZep(user.id, displayName);
+      }
     }
   }, [user?.id, user?.name, user?.email, userName, agentState?.user?.id, setAgentState]);
 
@@ -248,22 +348,25 @@ export default function Home() {
     // VIC's spoken response should NOT appear as text (ruins the magic)
     if (role === "user") {
       appendMessage(new TextMessage({ content: text, role: Role.User }));
+
+      // Extract topic from user query and store to Zep
+      if (user?.id) {
+        const topic = extractTopicFromQuery(text);
+        if (topic) {
+          storeTopicToZep(user.id, topic, userProfile.preferred_name);
+        }
+      }
     }
     // Note: VIC's voice response is handled by Hume - don't duplicate in chat
-
-    // Store to Zep memory for returning user recognition
-    if (user?.id) {
-      storeToZep(user.id, text, role || "user", userProfile.preferred_name);
-    }
   }, [appendMessage, user?.id, userProfile.preferred_name]);
 
   const handleTopicClick = useCallback((topic: string) => {
     const message = `Tell me about ${topic}`;
     appendMessage(new TextMessage({ content: message, role: Role.User }));
 
-    // Store topic click to Zep
+    // Store topic as structured entity to Zep (not just raw message)
     if (user?.id) {
-      storeToZep(user.id, message, "user", userProfile.preferred_name);
+      storeTopicToZep(user.id, topic, userProfile.preferred_name);
     }
   }, [appendMessage, user?.id, userProfile.preferred_name]);
 
@@ -567,22 +670,8 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
               AI-powered voice guide to 2,000 years of hidden history
             </p>
 
-            {/* VIC Avatar + Voice */}
+            {/* VIC Avatar + Voice - Avatar IS the clickable voice trigger */}
             <div className="flex flex-col items-center mb-8">
-              <div className="relative mb-6">
-                <div className="w-36 h-36 md:w-44 md:h-44 rounded-full overflow-hidden shadow-2xl border-4 border-[#f4ead5]/30">
-                  <img
-                    src="/vic-avatar.jpg"
-                    alt="VIC - Your London History Guide"
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-                <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-[#f4ead5] text-[#2a231a] text-sm px-4 py-1.5 rounded-full font-semibold shadow-lg">
-                  VIC
-                </div>
-              </div>
-
-              {/* Voice Input - forwards to CopilotKit */}
               <VoiceInput
                 onMessage={handleVoiceMessage}
                 userId={user?.id}
@@ -590,10 +679,6 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
                 isReturningUser={userProfile.isReturningUser}
                 userFacts={userProfile.facts}
               />
-
-              <p className="text-[#d4c4a8]/70 text-sm mt-3">
-                Tap to speak with VIC →
-              </p>
             </div>
 
             {/* Topic Pills - White text */}

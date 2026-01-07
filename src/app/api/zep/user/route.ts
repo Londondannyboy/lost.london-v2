@@ -75,11 +75,11 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId, message, role = "user", name } = await request.json();
+    const { userId, message, role = "user", name, topic, action } = await request.json();
 
-    if (!userId || !message) {
+    if (!userId) {
       return NextResponse.json(
-        { error: "userId and message are required" },
+        { error: "userId is required" },
         { status: 400 }
       );
     }
@@ -92,33 +92,96 @@ export async function POST(request: NextRequest) {
 
     const client = new ZepClient({ apiKey });
 
-    // Ensure user exists
+    // Ensure user exists with proper metadata
     try {
       await client.user.get(userId);
     } catch {
-      await client.user.add({ userId });
+      await client.user.add({
+        userId,
+        firstName: name,
+        metadata: { source: "lost-london-v2" },
+      });
     }
 
-    // Format message with speaker attribution
-    const formattedMessage = name
-      ? `${name} (${role}): ${message}`
-      : `${role}: ${message}`;
+    // ACTION: Store a specific topic interest (structured entity)
+    if (action === "topic_interest" && topic) {
+      // Store as structured JSON - Zep will create proper nodes/edges
+      const topicData = {
+        entity_type: "topic",
+        topic_name: topic,
+        user_action: "explored",
+        user_name: name || "User",
+        timestamp: new Date().toISOString(),
+      };
 
-    // Add message to user's graph (Zep automatically extracts facts)
-    const result = await client.graph.add({
-      userId,
-      type: "message",
-      data: formattedMessage,
-    });
+      // Use JSON type for structured data
+      const result = await client.graph.add({
+        userId,
+        type: "json",
+        data: JSON.stringify(topicData),
+      });
 
-    return NextResponse.json({
-      success: true,
-      episodeId: result.uuid,
-    });
+      // ALSO store a clear fact statement
+      await client.graph.add({
+        userId,
+        type: "text",
+        data: `${name || 'The user'} explored the topic "${topic}" in Lost London.`,
+      });
+
+      console.log(`[Zep User] Stored topic interest: ${topic} for ${name || userId}`);
+
+      return NextResponse.json({
+        success: true,
+        episodeId: result.uuid,
+        storedTopic: topic,
+      });
+    }
+
+    // ACTION: Store user profile info
+    if (action === "user_profile" && name) {
+      const result = await client.graph.add({
+        userId,
+        type: "text",
+        data: `The user's name is ${name}. They use Lost London to explore London history.`,
+      });
+
+      return NextResponse.json({
+        success: true,
+        episodeId: result.uuid,
+        storedName: name,
+      });
+    }
+
+    // DEFAULT: Store message (with better formatting)
+    if (message) {
+      // Format for better fact extraction
+      let formattedMessage: string;
+      if (role === "user") {
+        formattedMessage = name
+          ? `${name} asked: "${message}"`
+          : `User asked: "${message}"`;
+      } else {
+        formattedMessage = `VIC responded about: ${message.slice(0, 100)}`;
+      }
+
+      const result = await client.graph.add({
+        userId,
+        type: "text",
+        data: formattedMessage,
+      });
+
+      return NextResponse.json({
+        success: true,
+        episodeId: result.uuid,
+      });
+    }
+
+    return NextResponse.json({ success: false, reason: "No action or message provided" });
+
   } catch (error) {
     console.error("[Zep User] POST Error:", error);
     return NextResponse.json(
-      { error: "Failed to store message", details: String(error) },
+      { error: "Failed to store data", details: String(error) },
       { status: 500 }
     );
   }

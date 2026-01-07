@@ -131,54 +131,71 @@ RULES:
   const isConnected = status.value === "connected";
 
   return (
-    <div className="flex flex-col items-center gap-4 relative z-50">
+    <div className="flex flex-col items-center gap-2 relative z-50">
+      {/* VIC Avatar - clickable to start voice */}
       <button
         onClick={handleToggle}
         disabled={isPending}
-        className={`relative z-50 w-24 h-24 rounded-full flex items-center justify-center transition-all shadow-2xl cursor-pointer ${
+        className={`relative z-50 w-36 h-36 md:w-44 md:h-44 rounded-full overflow-hidden transition-all cursor-pointer ${
           isConnected
             ? isPlaying
-              ? "bg-amber-500 animate-pulse"
-              : "bg-green-500 hover:bg-green-600"
+              ? "ring-4 ring-amber-400 animate-pulse shadow-[0_0_30px_rgba(251,191,36,0.5)]"
+              : "ring-4 ring-green-400 shadow-[0_0_30px_rgba(74,222,128,0.5)]"
             : isPending
-            ? "bg-gray-400 cursor-not-allowed"
-            : "bg-[#f4ead5] hover:bg-white border-4 border-[#8b6914] hover:scale-110"
-        }`}
+            ? "opacity-50 cursor-not-allowed"
+            : "hover:scale-105 hover:shadow-[0_0_40px_rgba(244,234,213,0.4)] border-4 border-[#f4ead5]/30"
+        } shadow-2xl`}
         style={{ pointerEvents: 'auto' }}
-        title={isConnected ? (isPlaying ? "VIC is speaking..." : "Listening... (tap to stop)") : "Talk to VIC"}
+        title={isConnected ? (isPlaying ? "VIC is speaking..." : "Listening... (tap to stop)") : "Tap to speak with VIC"}
       >
-        {isPending ? (
-          <div className="w-8 h-8 border-3 border-white border-t-transparent rounded-full animate-spin" />
-        ) : isConnected ? (
-          isPlaying ? (
-            // Speaking indicator
-            <div className="flex gap-1">
-              {[...Array(3)].map((_, i) => (
-                <div
-                  key={i}
-                  className="w-2 h-8 bg-white rounded-full animate-pulse"
-                  style={{ animationDelay: `${i * 0.15}s` }}
-                />
-              ))}
-            </div>
-          ) : (
-            // Listening indicator
-            <div className="w-4 h-4 bg-white rounded-full animate-ping" />
-          )
-        ) : (
-          // Mic icon - gold to match border, visible on cream background
-          <svg className="w-10 h-10 text-[#8b6914]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2.5}
-              d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-            />
-          </svg>
+        {/* VIC's avatar image */}
+        <img
+          src="/vic-avatar.jpg"
+          alt="VIC - Your London History Guide"
+          className={`w-full h-full object-cover ${isPending ? 'grayscale' : ''}`}
+        />
+
+        {/* Overlay for connected states */}
+        {isConnected && (
+          <div className={`absolute inset-0 flex items-center justify-center ${
+            isPlaying ? 'bg-amber-500/30' : 'bg-green-500/30'
+          }`}>
+            {isPlaying ? (
+              // Speaking indicator - sound waves
+              <div className="flex gap-1">
+                {[...Array(4)].map((_, i) => (
+                  <div
+                    key={i}
+                    className="w-2 bg-white rounded-full animate-pulse"
+                    style={{
+                      height: `${20 + (i % 2) * 15}px`,
+                      animationDelay: `${i * 0.15}s`
+                    }}
+                  />
+                ))}
+              </div>
+            ) : (
+              // Listening indicator - pulsing mic
+              <div className="w-8 h-8 bg-white/80 rounded-full animate-ping" />
+            )}
+          </div>
+        )}
+
+        {/* Loading spinner */}
+        {isPending && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+            <div className="w-10 h-10 border-4 border-white border-t-transparent rounded-full animate-spin" />
+          </div>
         )}
       </button>
 
-      <span className={`text-sm font-medium ${isConnected ? 'text-white' : 'text-[#d4c4a8]'}`}>
+      {/* VIC name badge */}
+      <div className="bg-[#f4ead5] text-[#2a231a] text-sm px-4 py-1.5 rounded-full font-semibold shadow-lg -mt-4">
+        VIC
+      </div>
+
+      {/* Status text */}
+      <span className={`text-sm font-medium mt-1 ${isConnected ? 'text-white' : 'text-[#d4c4a8]'}`}>
         {isPending
           ? "Connecting..."
           : isConnected
