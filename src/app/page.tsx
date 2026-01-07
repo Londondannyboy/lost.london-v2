@@ -8,7 +8,8 @@ import { ArticleGrid } from "@/components/generative-ui/ArticleGrid";
 import { ArticleCard } from "@/components/generative-ui/ArticleCard";
 import { LocationMap } from "@/components/generative-ui/LocationMap";
 import { Timeline } from "@/components/generative-ui/Timeline";
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { authClient } from "@/lib/auth/client";
 
 // Loading component for tool results
 function ToolLoading({ title }: { title: string }) {
@@ -33,10 +34,68 @@ function TopicButton({ topic, onClick }: { topic: string; onClick: (topic: strin
   );
 }
 
+// Helper to store messages to Zep memory
+async function storeToZep(userId: string, message: string, role: "user" | "assistant", name?: string) {
+  if (!userId || message.length < 5) return;
+  try {
+    await fetch('/api/zep/user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, message, role, name }),
+    });
+  } catch (e) {
+    console.error('[VIC] Failed to store to Zep:', e);
+  }
+}
+
 export default function Home() {
   const { appendMessage } = useCopilotChat();
+  const { data: session } = authClient.useSession();
+  const user = session?.user;
 
-  // Handle voice messages - forward to CopilotKit
+  // User profile state for Zep personalization
+  const [userProfile, setUserProfile] = useState<{
+    preferred_name?: string;
+    isReturningUser?: boolean;
+    facts?: string[];
+  }>({});
+
+  // Fetch user profile and Zep context on mount
+  useEffect(() => {
+    async function fetchUserContext() {
+      if (!user?.id) return;
+
+      // Fetch user profile from our DB
+      try {
+        const profileRes = await fetch('/api/user-profile');
+        if (profileRes.ok) {
+          const profile = await profileRes.json();
+          setUserProfile(prev => ({ ...prev, preferred_name: profile.preferred_name }));
+        }
+      } catch (e) {
+        console.error('[VIC] Failed to fetch profile:', e);
+      }
+
+      // Fetch Zep context
+      try {
+        const zepRes = await fetch(`/api/zep/user?userId=${user.id}`);
+        if (zepRes.ok) {
+          const zepData = await zepRes.json();
+          setUserProfile(prev => ({
+            ...prev,
+            isReturningUser: zepData.isReturningUser,
+            facts: zepData.facts?.map((f: { fact?: string }) => f.fact).filter(Boolean),
+          }));
+          console.log('[VIC] User context:', zepData.isReturningUser ? 'returning' : 'new', 'with', zepData.facts?.length || 0, 'facts');
+        }
+      } catch (e) {
+        console.error('[VIC] Failed to fetch Zep context:', e);
+      }
+    }
+    fetchUserContext();
+  }, [user?.id]);
+
+  // Handle voice messages - forward to CopilotKit and store to Zep
   // Voice → onMessage → appendMessage → Pydantic AI Agent → useRenderToolCall → Generative UI
   const handleVoiceMessage = useCallback((text: string, role?: "user" | "assistant") => {
     console.log(`[VIC] Voice ${role}: ${text.slice(0, 80)}...`);
@@ -45,11 +104,22 @@ export default function Home() {
     // Tool results render in the CopilotSidebar via useRenderToolCall
     const messageRole = role === "user" ? Role.User : Role.Assistant;
     appendMessage(new TextMessage({ content: text, role: messageRole }));
-  }, [appendMessage]);
+
+    // Store to Zep memory for returning user recognition
+    if (user?.id) {
+      storeToZep(user.id, text, role || "user", userProfile.preferred_name);
+    }
+  }, [appendMessage, user?.id, userProfile.preferred_name]);
 
   const handleTopicClick = useCallback((topic: string) => {
-    appendMessage(new TextMessage({ content: `Tell me about ${topic}`, role: Role.User }));
-  }, [appendMessage]);
+    const message = `Tell me about ${topic}`;
+    appendMessage(new TextMessage({ content: message, role: Role.User }));
+
+    // Store topic click to Zep
+    if (user?.id) {
+      storeToZep(user.id, message, "user", userProfile.preferred_name);
+    }
+  }, [appendMessage, user?.id, userProfile.preferred_name]);
 
   // =============================================================================
   // GENERATIVE UI: Render tool results from Pydantic AI agent
@@ -166,7 +236,11 @@ export default function Home() {
               </div>
 
               {/* Voice Input - forwards to CopilotKit */}
-              <VoiceInput onMessage={handleVoiceMessage} />
+              <VoiceInput
+                onMessage={handleVoiceMessage}
+                userId={user?.id}
+                userName={userProfile.preferred_name}
+              />
 
               <p className="text-[#d4c4a8]/60 text-xs mt-2">
                 Voice synced with chat →

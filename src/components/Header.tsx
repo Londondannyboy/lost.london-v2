@@ -5,6 +5,20 @@ import { useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { authClient } from '@/lib/auth/client'
 
+// Book icon SVG component
+function BookIcon({ className = "w-6 h-6" }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={1.5}
+        d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+      />
+    </svg>
+  )
+}
+
 export function Header() {
   const [menuOpen, setMenuOpen] = useState(false)
   const pathname = usePathname()
@@ -14,8 +28,9 @@ export function Header() {
     <header className="sticky top-0 z-50 bg-stone-900 text-white">
       <div className="max-w-7xl mx-auto px-4">
         <div className="flex items-center justify-between h-14">
-          {/* Logo */}
-          <Link href="/" className="flex items-center gap-2">
+          {/* Logo with book icon */}
+          <Link href="/" className="flex items-center gap-2 group">
+            <BookIcon className="w-6 h-6 text-amber-500 group-hover:text-amber-400 transition-colors" />
             <span className="text-xl font-serif font-bold">Lost London</span>
           </Link>
 
@@ -33,6 +48,18 @@ export function Header() {
               >
                 Talk to VIC
               </Link>
+              {session?.user && (
+                <Link
+                  href="/dashboard"
+                  className={`px-3 py-2 text-sm transition-colors ${
+                    pathname === '/dashboard'
+                      ? 'text-white bg-white/10'
+                      : 'text-gray-300 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  My History
+                </Link>
+              )}
               <Link
                 href="/profile"
                 className={`px-3 py-2 text-sm transition-colors ${
@@ -111,6 +138,15 @@ export function Header() {
             >
               Talk to VIC
             </Link>
+            {session?.user && (
+              <Link
+                href="/dashboard"
+                className={`block px-4 py-2 ${pathname === '/dashboard' ? 'text-white bg-white/10' : 'text-gray-300'}`}
+                onClick={() => setMenuOpen(false)}
+              >
+                My History
+              </Link>
+            )}
             <Link
               href="/profile"
               className={`block px-4 py-2 ${pathname === '/profile' ? 'text-white bg-white/10' : 'text-gray-300'}`}

@@ -5,9 +5,11 @@ import { VoiceProvider, useVoice } from "@humeai/voice-react";
 
 interface VoiceButtonProps {
   onMessage: (text: string, role?: "user" | "assistant") => void;
+  userId?: string;
+  userName?: string;
 }
 
-function VoiceButton({ onMessage }: VoiceButtonProps) {
+function VoiceButton({ onMessage, userId, userName }: VoiceButtonProps) {
   const { connect, disconnect, status, messages, sendUserInput } = useVoice();
   const [isPending, setIsPending] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -53,12 +55,21 @@ function VoiceButton({ onMessage }: VoiceButtonProps) {
         const res = await fetch("/api/hume-token");
         const { accessToken } = await res.json();
 
+        // Build custom session ID with user context for the CLM endpoint
+        // Format: "userId|userName" - parsed by the backend for Zep memory
+        const customSessionId = userId
+          ? `${userId}|${userName || ''}`
+          : '';
+
         await connect({
           auth: { type: "accessToken", value: accessToken },
           configId: process.env.NEXT_PUBLIC_HUME_CONFIG_ID || "",
+          sessionSettings: customSessionId ? {
+            customSessionId,
+          } : undefined,
         });
 
-        // Trigger greeting
+        // Trigger greeting (personalized for returning users)
         setTimeout(() => {
           sendUserInput("Hello!");
         }, 500);
@@ -69,7 +80,7 @@ function VoiceButton({ onMessage }: VoiceButtonProps) {
         setIsPending(false);
       }
     }
-  }, [connect, disconnect, status.value, sendUserInput]);
+  }, [connect, disconnect, status.value, sendUserInput, userId, userName]);
 
   const isConnected = status.value === "connected";
 
@@ -135,8 +146,12 @@ function VoiceButton({ onMessage }: VoiceButtonProps) {
 
 export function VoiceInput({
   onMessage,
+  userId,
+  userName,
 }: {
   onMessage: (text: string, role?: "user" | "assistant") => void;
+  userId?: string;
+  userName?: string;
 }) {
   return (
     <VoiceProvider
@@ -144,7 +159,7 @@ export function VoiceInput({
       onOpen={() => console.log("[VIC Voice] Connected")}
       onClose={(e) => console.log("[VIC Voice] Closed:", e)}
     >
-      <VoiceButton onMessage={onMessage} />
+      <VoiceButton onMessage={onMessage} userId={userId} userName={userName} />
     </VoiceProvider>
   );
 }

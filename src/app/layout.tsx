@@ -8,6 +8,7 @@ import { NeonAuthUIProvider } from '@neondatabase/neon-js/auth/react/ui'
 import { CopilotWrapper } from '@/components/CopilotWrapper'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
+import { BookStrip } from '@/components/BookStrip'
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -41,10 +42,11 @@ export default function RootLayout({
         >
           <CopilotWrapper>
             <Header />
-            <main className="flex-1">
+            <main className="flex-1 pb-16">
               {children}
             </main>
             <Footer />
+            <BookStrip />
           </CopilotWrapper>
         </NeonAuthUIProvider>
       </body>

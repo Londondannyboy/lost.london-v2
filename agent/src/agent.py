@@ -10,8 +10,8 @@ import os
 import sys
 import json
 import uuid
-from typing import Optional, AsyncGenerator
-from dataclasses import dataclass
+from typing import Optional, AsyncGenerator, List
+from dataclasses import dataclass, field
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,6 +19,14 @@ from starlette.responses import StreamingResponse
 
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.messages import ModelMessage
+
+# Zep memory integration
+try:
+    from zep_cloud.client import AsyncZep
+    ZEP_AVAILABLE = True
+except ImportError:
+    ZEP_AVAILABLE = False
+    print("[VIC] Warning: zep-cloud not installed, memory features disabled", file=sys.stderr)
 
 from .models import AppState, VICResponse, ArticleCardData, MapLocation, TimelineEvent
 from .tools import (
@@ -29,6 +37,97 @@ from .tools import (
     extract_era_from_content,
     PHONETIC_CORRECTIONS,
 )
+
+
+# =============================================================================
+# ZEP MEMORY CLIENT
+# =============================================================================
+
+_zep_client: Optional["AsyncZep"] = None
+
+def get_zep_client() -> Optional["AsyncZep"]:
+    """Get or create Zep client singleton."""
+    global _zep_client
+    if _zep_client is None and ZEP_AVAILABLE:
+        api_key = os.environ.get("ZEP_API_KEY")
+        if api_key:
+            _zep_client = AsyncZep(api_key=api_key)
+            print("[VIC] Zep memory client initialized", file=sys.stderr)
+        else:
+            print("[VIC] ZEP_API_KEY not set, memory disabled", file=sys.stderr)
+    return _zep_client
+
+
+async def get_user_memory(user_id: str) -> dict:
+    """Retrieve user's conversation history and interests from Zep."""
+    client = get_zep_client()
+    if not client:
+        return {"found": False, "is_returning": False, "facts": []}
+
+    try:
+        results = await client.graph.search(
+            user_id=user_id,
+            query="user name interests preferences topics discussed London history",
+            limit=20,
+            scope="edges",
+        )
+
+        facts = []
+        if results and hasattr(results, 'edges') and results.edges:
+            facts = [edge.fact for edge in results.edges if hasattr(edge, 'fact') and edge.fact]
+
+        return {
+            "found": True,
+            "is_returning": len(facts) > 0,
+            "facts": facts[:10],  # Limit to 10 most relevant
+            "user_name": extract_user_name_from_facts(facts),
+        }
+    except Exception as e:
+        print(f"[VIC] Zep search error: {e}", file=sys.stderr)
+        return {"found": False, "is_returning": False, "facts": []}
+
+
+async def store_to_memory(user_id: str, message: str, role: str = "user") -> bool:
+    """Store conversation message to Zep for future context."""
+    client = get_zep_client()
+    if not client:
+        return False
+
+    try:
+        # Ensure user exists
+        try:
+            await client.user.get(user_id)
+        except Exception:
+            await client.user.add(user_id=user_id)
+
+        # Add message to graph
+        await client.graph.add(
+            user_id=user_id,
+            type="message",
+            data=f"{role}: {message}",
+        )
+        return True
+    except Exception as e:
+        print(f"[VIC] Zep store error: {e}", file=sys.stderr)
+        return False
+
+
+def extract_user_name_from_facts(facts: List[str]) -> Optional[str]:
+    """Extract user's name from Zep facts."""
+    import re
+    for fact in facts:
+        lower = fact.lower()
+        patterns = [
+            r"name is (\w+)",
+            r"called (\w+)",
+            r"user (\w+)",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, lower)
+            if match:
+                name = match.group(1)
+                return name.capitalize()
+    return None
 
 
 # =============================================================================
@@ -103,6 +202,39 @@ class VICDeps:
     state: AppState
     user_id: Optional[str] = None
     user_name: Optional[str] = None
+    is_returning_user: bool = False
+    user_facts: List[str] = field(default_factory=list)
+
+
+def build_system_prompt(user_context: Optional[dict] = None) -> str:
+    """Build system prompt with optional returning user context."""
+    base_prompt = VIC_SYSTEM_PROMPT
+
+    if user_context and user_context.get("is_returning"):
+        facts = user_context.get("facts", [])
+        user_name = user_context.get("user_name")
+
+        returning_context = """
+
+## RETURNING USER CONTEXT
+This user has spoken to you before. What you remember about them:
+"""
+        for fact in facts[:10]:
+            returning_context += f"- {fact}\n"
+
+        returning_context += """
+GREETING RULES FOR RETURNING USER:
+- DO NOT say "Hello" or give a full introduction
+- Instead: "Ah, welcome back! """
+        if user_name:
+            returning_context += f"Good to see you again, {user_name}. "
+        returning_context += """Last time we discussed [topic from facts]. Shall we continue, or explore something new?"
+- Reference their past interests naturally
+- Make them feel recognized and valued
+"""
+        base_prompt += returning_context
+
+    return base_prompt
 
 
 # =============================================================================
@@ -330,6 +462,7 @@ async def clm_endpoint(request: Request):
     OpenAI-compatible CLM endpoint for Hume EVI.
 
     Hume sends messages here and expects SSE streaming responses.
+    Now with Zep memory integration for returning user recognition.
     """
     body = await request.json()
     messages = body.get("messages", [])
@@ -340,13 +473,24 @@ async def clm_endpoint(request: Request):
         ""
     )
 
-    # Parse session ID for user context (format: "firstName|sessionId|context")
+    # Parse session ID for user context (format: "userId|userName|returning")
     # This is set by the frontend voice widget
     custom_session_id = body.get("custom_session_id", "")
+    user_id = None
     user_name = None
+    user_context = None
+
     if "|" in custom_session_id:
         parts = custom_session_id.split("|")
-        user_name = parts[0] if parts[0] else None
+        user_id = parts[0] if len(parts) > 0 and parts[0] else None
+        user_name = parts[1] if len(parts) > 1 and parts[1] else None
+
+        # Fetch user memory context from Zep
+        if user_id:
+            user_context = await get_user_memory(user_id)
+            if user_context.get("user_name") and not user_name:
+                user_name = user_context["user_name"]
+            print(f"[VIC CLM] User context: returning={user_context.get('is_returning')}, facts={len(user_context.get('facts', []))}", file=sys.stderr)
 
     # Normalize query with phonetic corrections
     normalized_query = normalize_query(user_msg)
@@ -371,10 +515,24 @@ async def clm_endpoint(request: Request):
                 for a in results.articles[:2]
             ])
 
-            # Create deps and run agent
+            # Create deps with user context
             deps = VICDeps(
                 state=AppState(),
+                user_id=user_id,
                 user_name=user_name,
+                is_returning_user=user_context.get("is_returning", False) if user_context else False,
+                user_facts=user_context.get("facts", []) if user_context else [],
+            )
+
+            # Build dynamic system prompt for returning users
+            dynamic_prompt = build_system_prompt(user_context)
+
+            # Create a temporary agent with the dynamic prompt
+            temp_agent = Agent(
+                'google-gla:gemini-2.0-flash',
+                deps_type=VICDeps,
+                system_prompt=dynamic_prompt,
+                retries=2,
             )
 
             # Run the agent with context
@@ -385,8 +543,15 @@ USER QUESTION: {user_msg}
 
 Remember: ONLY use information from the source material above. Go into DEPTH (150-250 words)."""
 
-            result = await agent.run(prompt, deps=deps)
+            result = await temp_agent.run(prompt, deps=deps)
             response_text = result.output
+
+            # Store conversation to Zep memory (async, don't await)
+            if user_id and len(user_msg) > 5:
+                # Store user message
+                await store_to_memory(user_id, user_msg, "user")
+                # Store VIC's response (summarized)
+                await store_to_memory(user_id, response_text[:500], "assistant")
 
         else:
             response_text = "I don't seem to have any articles about that in my collection. Would you like to explore something else? I've got stories about Thorney Island, the Royal Aquarium, Tyburn, and many other hidden corners of London."
