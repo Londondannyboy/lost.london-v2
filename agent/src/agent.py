@@ -37,6 +37,7 @@ from .tools import (
     extract_era_from_content,
     PHONETIC_CORRECTIONS,
 )
+from .database import get_user_preferred_name
 
 # =============================================================================
 # SESSION CONTEXT FOR NAME SPACING & GREETING MANAGEMENT
@@ -812,6 +813,18 @@ async def clm_endpoint(request: Request):
         if user_context.get("user_name") and not user_name:
             user_name = user_context["user_name"]
         print(f"[VIC CLM] User context: returning={user_context.get('is_returning')}, facts={len(user_context.get('facts', []))}", file=sys.stderr)
+
+    # Final fallback: check Neon database for preferred_name
+    if not user_name and user_id:
+        db_name = await get_user_preferred_name(user_id)
+        if db_name:
+            user_name = db_name
+            print(f"[VIC CLM] Got name from Neon DB: {user_name}", file=sys.stderr)
+
+    # Log final name resolution
+    _last_request_debug["user_name_resolved"] = user_name
+    _last_request_debug["user_id"] = user_id
+    print(f"[VIC CLM] Final user_name: {user_name}, user_id: {user_id}", file=sys.stderr)
 
     # Normalize query with phonetic corrections
     normalized_query = normalize_query(user_msg)

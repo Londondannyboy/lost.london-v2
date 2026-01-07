@@ -158,3 +158,38 @@ async def get_articles_by_era(era_keywords: list[str], limit: int = 5) -> list[d
         """
         results = await conn.fetch(query, limit)
         return [dict(r) for r in results]
+
+
+async def get_user_preferred_name(user_id: str) -> Optional[str]:
+    """
+    Get user's preferred name from Neon database.
+    Checks both user_data table and better-auth user table.
+    """
+    try:
+        async with get_connection() as conn:
+            # First check user_data table for preferred_name
+            result = await conn.fetchrow("""
+                SELECT preferred_name FROM user_data WHERE user_id = $1
+            """, user_id)
+
+            if result and result['preferred_name']:
+                print(f"[VIC DB] Found preferred_name in user_data: {result['preferred_name']}", file=sys.stderr)
+                return result['preferred_name']
+
+            # Fallback: check better-auth user table for name
+            result = await conn.fetchrow("""
+                SELECT name FROM "user" WHERE id = $1
+            """, user_id)
+
+            if result and result['name']:
+                # Extract first name
+                name = result['name'].split()[0] if result['name'] else None
+                if name:
+                    print(f"[VIC DB] Found name in user table: {name}", file=sys.stderr)
+                    return name
+
+            print(f"[VIC DB] No name found for user {user_id}", file=sys.stderr)
+            return None
+    except Exception as e:
+        print(f"[VIC DB] Error looking up user name: {e}", file=sys.stderr)
+        return None
