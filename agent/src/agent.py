@@ -38,6 +38,134 @@ from .tools import (
     PHONETIC_CORRECTIONS,
 )
 
+# =============================================================================
+# SESSION CONTEXT FOR NAME SPACING & GREETING MANAGEMENT
+# =============================================================================
+
+from collections import OrderedDict
+import time
+import random
+
+# LRU cache for session contexts (max 100 sessions)
+_session_contexts: OrderedDict = OrderedDict()
+MAX_SESSIONS = 100
+NAME_COOLDOWN_TURNS = 3  # Don't use name for 3 turns after using it
+
+@dataclass
+class SessionContext:
+    """Track conversation state per session for name spacing and greeting."""
+    turns_since_name_used: int = 0
+    name_used_in_greeting: bool = False
+    greeted_this_session: bool = False
+    last_topic: str = ""
+    last_interaction_time: float = field(default_factory=time.time)
+
+
+def get_session_context(session_id: str) -> SessionContext:
+    """Get or create session context with LRU eviction."""
+    global _session_contexts
+
+    if session_id in _session_contexts:
+        # Move to end (most recently used)
+        _session_contexts.move_to_end(session_id)
+        return _session_contexts[session_id]
+
+    # Evict oldest if at capacity
+    while len(_session_contexts) >= MAX_SESSIONS:
+        _session_contexts.popitem(last=False)
+
+    ctx = SessionContext()
+    _session_contexts[session_id] = ctx
+    return ctx
+
+
+def should_use_name(session_id: str, is_greeting: bool = False) -> bool:
+    """
+    Rules for name usage to avoid over-repetition:
+    - Always use name in greeting (first message)
+    - After that, wait NAME_COOLDOWN_TURNS before using again
+    - Never use name in consecutive turns
+    """
+    ctx = get_session_context(session_id)
+
+    if is_greeting and not ctx.name_used_in_greeting:
+        return True
+
+    if ctx.turns_since_name_used >= NAME_COOLDOWN_TURNS:
+        return True
+
+    return False
+
+
+def mark_name_used(session_id: str, in_greeting: bool = False):
+    """Mark that we used the name, reset cooldown counter."""
+    ctx = get_session_context(session_id)
+    ctx.turns_since_name_used = 0
+    if in_greeting:
+        ctx.name_used_in_greeting = True
+        ctx.greeted_this_session = True
+
+
+def increment_turn(session_id: str):
+    """Increment turn counter for name spacing."""
+    ctx = get_session_context(session_id)
+    ctx.turns_since_name_used += 1
+    ctx.last_interaction_time = time.time()
+
+
+# =============================================================================
+# PERSONALIZED GREETING GENERATION
+# =============================================================================
+
+def generate_returning_user_greeting(
+    user_name: Optional[str],
+    recent_topics: List[str],
+    user_facts: List[str],
+) -> str:
+    """
+    Generate a personalized greeting for returning users.
+    Uses variations to avoid repetition.
+    """
+    name = user_name or ""
+    name_part = f", {name}" if name else ""
+
+    # If we have a recent topic, reference it
+    if recent_topics:
+        topic = recent_topics[0]
+        greetings_with_topic = [
+            f"Welcome back{name_part}. Last time we were exploring {topic}. Shall we pick up where we left off, or discover something new?",
+            f"Ah{name_part}, lovely to hear from you again. I remember we discussed {topic}. Would you like to continue with that, or shall I tell you about something else?",
+            f"Hello again{name_part}. We were chatting about {topic} before. Shall we dive deeper into that?",
+        ]
+        return random.choice(greetings_with_topic)
+
+    # Known user without recent topic
+    if name:
+        greetings_with_name = [
+            f"Welcome back, {name}. What corner of London's history shall we explore today?",
+            f"Ah, {name}, good to hear from you again. What would you like to discover?",
+            f"Hello again, {name}. I've got 372 articles about hidden London. What catches your fancy?",
+        ]
+        return random.choice(greetings_with_name)
+
+    # Returning user without name
+    greetings_generic = [
+        "Welcome back. What shall we explore today?",
+        "Ah, good to hear from you again. Where shall we venture in London's history?",
+        "Hello again. What would you like to discover about hidden London?",
+    ]
+    return random.choice(greetings_generic)
+
+
+def generate_new_user_greeting() -> str:
+    """Generate greeting for first-time users."""
+    greetings = [
+        "I'm Vic Keegan, and I've spent years uncovering London's hidden history. I'd love to share my discoveries with you. What should I call you, and what aspect of London interests you most?",
+        "Hello, I'm Vic. I've written over 370 articles about London's forgotten places and untold stories. What's your name, and where shall we begin?",
+        "Welcome to Lost London. I'm Vic Keegan, your guide to 2,000 years of hidden history. What would you like to discover?",
+    ]
+    return random.choice(greetings)
+
 
 # =============================================================================
 # ZEP MEMORY CLIENT
@@ -544,6 +672,47 @@ async def clm_endpoint(request: Request):
             media_type="text/event-stream"
         )
 
+    # Build session ID for context tracking
+    session_id = custom_session_id or str(uuid.uuid4())
+
+    # Greeting detection - handle "hello", "hi", etc.
+    greeting_words = ["hello", "hi", "hey", "hiya", "howdy", "greetings", "good morning",
+                      "good afternoon", "good evening", "start"]
+    is_greeting = any(normalized_query.lower().strip() == gw or
+                      normalized_query.lower().startswith(gw + " ") or
+                      normalized_query.lower().startswith(gw + ",") or
+                      normalized_query.lower().startswith(gw + "!")
+                      for gw in greeting_words)
+
+    if is_greeting:
+        ctx = get_session_context(session_id)
+        if not ctx.greeted_this_session:
+            # First greeting this session - personalize based on user context
+            if user_context and user_context.get("is_returning"):
+                recent_topics = []
+                # Extract topic names from facts
+                for fact in user_context.get("facts", [])[:5]:
+                    if "interested in" in fact.lower() or "discussed" in fact.lower():
+                        recent_topics.append(fact.split("in ")[-1].split(",")[0].strip())
+                response_text = generate_returning_user_greeting(
+                    user_name=user_name,
+                    recent_topics=recent_topics[:2],
+                    user_facts=user_context.get("facts", []),
+                )
+                if user_name:
+                    mark_name_used(session_id, in_greeting=True)
+            else:
+                response_text = generate_new_user_greeting()
+            ctx.greeted_this_session = True
+        else:
+            # Already greeted - don't re-greet
+            response_text = "What would you like to explore? I've got stories about Thorney Island, the Royal Aquarium, hidden rivers, and much more."
+
+        return StreamingResponse(
+            stream_sse_response(response_text, str(uuid.uuid4())),
+            media_type="text/event-stream"
+        )
+
     # Identity/meta questions about VIC - handle before article search
     identity_keywords = ["who are you", "what are you", "your name", "about yourself",
                          "books have you written", "your books", "did you write",
@@ -559,6 +728,9 @@ from Roman London to Victorian music halls. Would you like to hear about any par
             stream_sse_response(response_text.replace('\n', ' '), str(uuid.uuid4())),
             media_type="text/event-stream"
         )
+
+    # Increment turn counter for name spacing
+    increment_turn(session_id)
 
     # Search for relevant articles
     try:
