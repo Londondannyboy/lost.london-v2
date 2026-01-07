@@ -706,6 +706,46 @@ def extract_user_name_from_session(session_id: Optional[str]) -> Optional[str]:
     return None
 
 
+def extract_user_name_from_messages(messages: list) -> Optional[str]:
+    """
+    Extract user name from system message.
+    Handles multiple formats:
+    - "name: Dan" (from lost-london-v2 frontend)
+    - "USER'S NAME: Dan" (legacy format)
+    - "Hello Dan" / "Welcome back Dan" (greeting patterns)
+    """
+    import re
+
+    for msg in messages:
+        if msg.get("role") == "system":
+            content = msg.get("content", "")
+            if isinstance(content, str):
+                # Format 1: "name: Dan" (primary format from frontend)
+                match = re.search(r'\bname:\s*(\w+)', content, re.IGNORECASE)
+                if match:
+                    name = match.group(1)
+                    if name and name.lower() != 'unknown':
+                        print(f"[VIC CLM] Found user name in system message (name:): {name}", file=sys.stderr)
+                        return name
+
+                # Format 2: "USER'S NAME: Dan" (legacy format)
+                match = re.search(r"USER'S NAME:\s*(\w+)", content, re.IGNORECASE)
+                if match:
+                    name = match.group(1)
+                    print(f"[VIC CLM] Found user name in system message (USER'S NAME:): {name}", file=sys.stderr)
+                    return name
+
+                # Format 3: "Hello Dan" or "Welcome back Dan" patterns
+                match = re.search(r"(?:Hello|Welcome back),?\s+(\w+)", content)
+                if match:
+                    name = match.group(1)
+                    print(f"[VIC CLM] Found user name in greeting pattern: {name}", file=sys.stderr)
+                    return name
+
+    print(f"[VIC CLM] No user name found in messages", file=sys.stderr)
+    return None
+
+
 @app.post("/chat/completions")
 async def clm_endpoint(request: Request):
     """
@@ -714,8 +754,30 @@ async def clm_endpoint(request: Request):
     Hume sends messages here and expects SSE streaming responses.
     Now with Zep memory integration for returning user recognition.
     """
+    global _last_request_debug
+
     body = await request.json()
     messages = body.get("messages", [])
+
+    # Store for debugging
+    import time
+    _last_request_debug = {
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "messages_count": len(messages),
+        "body_keys": list(body.keys()),
+        "query_params": dict(request.query_params),
+        "headers": {k: v for k, v in request.headers.items() if k.lower() in [
+            "x-custom-session-id", "x-session-id", "custom-session-id",
+            "authorization", "content-type", "x-hume-session-id"
+        ]},
+        "messages": [
+            {
+                "role": m.get("role"),
+                "content_preview": str(m.get("content", ""))[:300]
+            }
+            for m in messages
+        ],
+    }
 
     # Extract user message
     user_msg = next(
@@ -729,6 +791,11 @@ async def clm_endpoint(request: Request):
 
     # Extract user name from session (format: "name|userId")
     user_name = extract_user_name_from_session(session_id)
+
+    # Fallback: extract from system message (Hume forwards systemPrompt as system message)
+    if not user_name:
+        user_name = extract_user_name_from_messages(messages)
+
     print(f"[VIC CLM] User name: {user_name}", file=sys.stderr)
 
     # Extract user_id from session (format: "name|userId")
@@ -917,3 +984,13 @@ async def health():
 async def health_check():
     """Health check for Railway."""
     return {"status": "healthy"}
+
+
+# Store last request for debugging
+_last_request_debug: dict = {"status": "no requests yet"}
+
+
+@app.get("/debug/last-request")
+async def debug_last_request():
+    """Return the last request received for debugging."""
+    return _last_request_debug
