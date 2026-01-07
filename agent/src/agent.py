@@ -1537,30 +1537,41 @@ In this chat, keep it SHORT:
             # Extract the response text
             response_text = result.output if hasattr(result, 'output') else ""
 
-            # Get UI data from tool results in messages
-            # Pydantic AI stores tool returns in message parts, not result.data
+            # Get UI data from tool results
+            # Try multiple ways to find the tool return data
             ui_data = None
             ui_component = None
 
-            # Search through all messages for tool return parts
-            if hasattr(result, 'all_messages'):
+            # Method 1: Check result.data directly
+            if hasattr(result, 'data') and isinstance(result.data, dict):
+                if 'ui_component' in result.data:
+                    ui_data = result.data
+                    ui_component = result.data.get('ui_component')
+                    logger.info(f"[VIC CopilotKit] Found UI data in result.data")
+
+            # Method 2: Search through all messages for tool return parts
+            if not ui_data and hasattr(result, 'all_messages'):
                 for msg in result.all_messages():
+                    if ui_data:
+                        break
                     if hasattr(msg, 'parts'):
                         for part in msg.parts:
-                            # Tool return parts have 'content' with our dict
+                            # Check for ToolReturnPart
+                            part_type = type(part).__name__
+                            logger.info(f"[VIC CopilotKit] Checking part type: {part_type}")
+
+                            # Get content from part
                             part_content = getattr(part, 'content', None)
+
+                            # Log what we found
+                            if part_content:
+                                logger.info(f"[VIC CopilotKit] Part content type: {type(part_content).__name__}, has ui_component: {'ui_component' in part_content if isinstance(part_content, dict) else 'N/A'}")
+
                             if isinstance(part_content, dict) and 'ui_component' in part_content:
                                 ui_data = part_content
                                 ui_component = part_content.get('ui_component')
-                                logger.info(f"[VIC CopilotKit] Found Librarian UI data in message part")
+                                logger.info(f"[VIC CopilotKit] Found Librarian UI data!")
                                 break
-                            # Also check tool_name for ToolReturnPart
-                            if hasattr(part, 'tool_name') and hasattr(part, 'content'):
-                                if isinstance(part.content, dict) and 'ui_component' in part.content:
-                                    ui_data = part.content
-                                    ui_component = part.content.get('ui_component')
-                                    logger.info(f"[VIC CopilotKit] Found Librarian UI data from tool: {part.tool_name}")
-                                    break
 
             # Log what we found
             if ui_data:
@@ -1569,7 +1580,9 @@ In this chat, keep it SHORT:
                 hero_img = ui_data.get('hero_image')
                 logger.info(f"[VIC CopilotKit] Librarian returned: ui_component={ui_component}, articles={len(articles)}, with_images={has_images}, hero_image={'YES: ' + hero_img[:50] if hero_img else 'NO'}")
             else:
-                logger.warning(f"[VIC CopilotKit] No UI data found from Librarian!")
+                logger.warning(f"[VIC CopilotKit] No UI data found from Librarian! Dumping result structure...")
+                logger.warning(f"[VIC CopilotKit] result type: {type(result).__name__}")
+                logger.warning(f"[VIC CopilotKit] result attrs: {[a for a in dir(result) if not a.startswith('_')]}")
 
             return {
                 "speaker": "librarian",
