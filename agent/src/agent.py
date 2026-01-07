@@ -1834,7 +1834,7 @@ else:
 async def health():
     """Health check endpoint."""
     logger.info("Health endpoint called!")
-    return {"status": "ok", "agent": "VIC - Lost London", "version": "2026-01-07-v5"}
+    return {"status": "ok", "agent": "VIC - Lost London", "deployed": "2026-01-07-22:33-session-cache"}
 
 
 @app.get("/health")
