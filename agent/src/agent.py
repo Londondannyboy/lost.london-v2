@@ -660,6 +660,52 @@ async def stream_sse_response(content: str, msg_id: str) -> AsyncGenerator[str, 
     yield "data: [DONE]\n\n"
 
 
+def extract_session_id(request: Request, body: dict) -> Optional[str]:
+    """
+    Extract custom_session_id from request (matches lost.london-clm pattern).
+    Checks: query params, headers, body.custom_session_id, body.metadata.custom_session_id
+    """
+    # 1. Query params
+    session_id = request.query_params.get("custom_session_id")
+    if session_id:
+        print(f"[VIC CLM] Session ID from query params: {session_id}", file=sys.stderr)
+        return session_id
+
+    # 2. Headers
+    for header_name in ["x-custom-session-id", "x-session-id", "custom-session-id"]:
+        session_id = request.headers.get(header_name)
+        if session_id:
+            print(f"[VIC CLM] Session ID from header {header_name}: {session_id}", file=sys.stderr)
+            return session_id
+
+    # 3. Body direct
+    session_id = body.get("custom_session_id") or body.get("session_id")
+    if session_id:
+        print(f"[VIC CLM] Session ID from body: {session_id}", file=sys.stderr)
+        return session_id
+
+    # 4. Body metadata
+    metadata = body.get("metadata", {})
+    if metadata:
+        session_id = metadata.get("custom_session_id") or metadata.get("session_id")
+        if session_id:
+            print(f"[VIC CLM] Session ID from body.metadata: {session_id}", file=sys.stderr)
+            return session_id
+
+    return None
+
+
+def extract_user_name_from_session(session_id: Optional[str]) -> Optional[str]:
+    """Extract user name from session ID. Format: 'name|userId' (name first)"""
+    if not session_id:
+        return None
+    if '|' in session_id:
+        name = session_id.split('|')[0]
+        if name and len(name) > 1 and name.lower() != 'anon':
+            return name
+    return None
+
+
 @app.post("/chat/completions")
 async def clm_endpoint(request: Request):
     """
@@ -677,24 +723,28 @@ async def clm_endpoint(request: Request):
         ""
     )
 
-    # Parse session ID for user context (format: "userId|userName|returning")
-    # This is set by the frontend voice widget
-    custom_session_id = body.get("custom_session_id", "")
+    # Extract session ID (matches lost.london-clm pattern)
+    session_id = extract_session_id(request, body)
+    print(f"[VIC CLM] Session ID: {session_id}", file=sys.stderr)
+
+    # Extract user name from session (format: "name|userId")
+    user_name = extract_user_name_from_session(session_id)
+    print(f"[VIC CLM] User name: {user_name}", file=sys.stderr)
+
+    # Extract user_id from session (format: "name|userId")
     user_id = None
-    user_name = None
+    if session_id and '|' in session_id:
+        parts = session_id.split('|')
+        if len(parts) > 1:
+            user_id = parts[1].split('_')[0] if parts[1] else None
+
+    # Fetch user memory context from Zep
     user_context = None
-
-    if "|" in custom_session_id:
-        parts = custom_session_id.split("|")
-        user_id = parts[0] if len(parts) > 0 and parts[0] else None
-        user_name = parts[1] if len(parts) > 1 and parts[1] else None
-
-        # Fetch user memory context from Zep
-        if user_id:
-            user_context = await get_user_memory(user_id)
-            if user_context.get("user_name") and not user_name:
-                user_name = user_context["user_name"]
-            print(f"[VIC CLM] User context: returning={user_context.get('is_returning')}, facts={len(user_context.get('facts', []))}", file=sys.stderr)
+    if user_id:
+        user_context = await get_user_memory(user_id)
+        if user_context.get("user_name") and not user_name:
+            user_name = user_context["user_name"]
+        print(f"[VIC CLM] User context: returning={user_context.get('is_returning')}, facts={len(user_context.get('facts', []))}", file=sys.stderr)
 
     # Normalize query with phonetic corrections
     normalized_query = normalize_query(user_msg)
@@ -708,42 +758,53 @@ async def clm_endpoint(request: Request):
             media_type="text/event-stream"
         )
 
-    # Build session ID for context tracking
-    session_id = custom_session_id or str(uuid.uuid4())
+    # Greeting detection - matches lost.london-clm pattern
+    # Hume sends "speak your greeting" or user says "hello"
+    is_greeting_request = (
+        "speak your greeting" in user_msg.lower() or
+        normalized_query.lower().strip() in ["hello", "hi", "hey", "hiya", "howdy", "greetings", "start"] or
+        normalized_query.lower().startswith("hello ") or
+        normalized_query.lower().startswith("hi ")
+    )
 
-    # Greeting detection - handle "hello", "hi", etc.
-    greeting_words = ["hello", "hi", "hey", "hiya", "howdy", "greetings", "good morning",
-                      "good afternoon", "good evening", "start"]
-    is_greeting = any(normalized_query.lower().strip() == gw or
-                      normalized_query.lower().startswith(gw + " ") or
-                      normalized_query.lower().startswith(gw + ",") or
-                      normalized_query.lower().startswith(gw + "!")
-                      for gw in greeting_words)
-
-    if is_greeting:
-        ctx = get_session_context(session_id)
+    if is_greeting_request:
+        ctx = get_session_context(session_id or "default")
         if not ctx.greeted_this_session:
             # First greeting this session - personalize based on user context
-            if user_context and user_context.get("is_returning"):
-                recent_topics = []
-                # Extract topic names from facts
-                for fact in user_context.get("facts", [])[:5]:
-                    if "interested in" in fact.lower() or "discussed" in fact.lower():
-                        recent_topics.append(fact.split("in ")[-1].split(",")[0].strip())
-                response_text = generate_returning_user_greeting(
-                    user_name=user_name,
-                    recent_topics=recent_topics[:2],
-                    user_facts=user_context.get("facts", []),
-                )
-                if user_name:
-                    mark_name_used(session_id, in_greeting=True)
+            is_returning = user_context.get("is_returning", False) if user_context else False
+
+            if is_returning and user_name:
+                # Returning user with name
+                response_text = f"Welcome back to Lost London, {user_name}! Lovely to hear from you again. What corner of London's hidden history shall we explore today?"
+                mark_name_used(session_id or "default", in_greeting=True)
+            elif user_name:
+                # New user with name
+                response_text = f"Welcome to Lost London, {user_name}! I'm Vic Keegan, and I've spent years uncovering this city's hidden stories. Ask me about Thorney Island, the Royal Aquarium, or any corner of London's past."
+                mark_name_used(session_id or "default", in_greeting=True)
             else:
-                response_text = generate_new_user_greeting()
+                # Anonymous user
+                response_text = "Welcome to Lost London! I'm Vic Keegan, historian and author. I've collected over 370 stories about London's hidden history. What would you like to discover?"
+
             ctx.greeted_this_session = True
+            print(f"[VIC CLM] Greeting: user_name={user_name}, is_returning={is_returning}", file=sys.stderr)
         else:
             # Already greeted - don't re-greet
             response_text = "What would you like to explore? I've got stories about Thorney Island, the Royal Aquarium, hidden rivers, and much more."
 
+        return StreamingResponse(
+            stream_sse_response(response_text, str(uuid.uuid4())),
+            media_type="text/event-stream"
+        )
+
+    # User asking their own name - use session context
+    name_questions = ["what is my name", "what's my name", "do you know my name", "who am i"]
+    is_name_question = any(nq in normalized_query.lower() for nq in name_questions)
+
+    if is_name_question:
+        if user_name:
+            response_text = f"You're {user_name}, of course! Now, what would you like to explore in London's hidden history?"
+        else:
+            response_text = "I don't believe you've told me your name yet. What should I call you?"
         return StreamingResponse(
             stream_sse_response(response_text, str(uuid.uuid4())),
             media_type="text/event-stream"
