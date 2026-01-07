@@ -49,12 +49,13 @@ async function storeToZep(userId: string, message: string, role: "user" | "assis
   }
 }
 
-// State type that matches the backend AgentState
-type VICAgentState = {
-  user_id: string | null;
-  user_name: string | null;
-  is_returning_user: boolean;
-  recent_interests: string[];
+// Agent state - synced to backend via useCoAgent
+type AgentState = {
+  user?: {
+    id: string;
+    name: string;
+    email: string;
+  };
 };
 
 export default function Home() {
@@ -107,29 +108,25 @@ export default function Home() {
   // Get user's first name for personalization
   const userName = userProfile.preferred_name || user?.name?.split(' ')[0] || user?.name;
 
-  // Sync user context with backend agent via useCoAgent
-  const { setState: setAgentState } = useCoAgent<VICAgentState>({
-    name: "vic_agent",  // Must match the agent name from backend
-    initialState: {
-      user_id: user?.id || null,
-      user_name: userName || null,
-      is_returning_user: userProfile.isReturningUser || false,
-      recent_interests: userProfile.facts || [],
-    },
+  // Sync user to agent state via useCoAgent
+  // The backend tool get_my_profile reads from ctx.deps.state.user
+  const { state: agentState, setState: setAgentState } = useCoAgent<AgentState>({
+    name: "vic_agent",
+    initialState: { user: undefined },
   });
 
-  // Update agent state when user profile changes
+  // Sync logged-in user to agent state
   useEffect(() => {
-    if (user?.id || userName) {
-      setAgentState({
-        user_id: user?.id || null,
-        user_name: userName || null,
-        is_returning_user: userProfile.isReturningUser || false,
-        recent_interests: userProfile.facts || [],
-      });
-      console.log('[VIC] Agent state updated:', { user_id: user?.id, user_name: userName, is_returning: userProfile.isReturningUser });
+    if (user?.id && !agentState?.user?.id) {
+      const userInfo = {
+        id: user.id,
+        name: userName || user.name || 'Unknown',
+        email: user.email || '',
+      };
+      setAgentState(prev => ({ ...prev, user: userInfo }));
+      console.log('[VIC] User synced to agent state:', userInfo);
     }
-  }, [user?.id, userName, userProfile.isReturningUser, userProfile.facts, setAgentState]);
+  }, [user?.id, user?.name, user?.email, userName, agentState?.user?.id, setAgentState]);
 
   // Handle voice messages - forward to CopilotKit and store to Zep
   // Voice → onMessage → appendMessage → Pydantic AI Agent → useRenderToolCall → Generative UI

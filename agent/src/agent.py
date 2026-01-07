@@ -346,12 +346,16 @@ After exploring the topic in depth, end with a natural follow-up question:
 
 from pydantic import BaseModel
 
+class UserInfo(BaseModel):
+    """User info synced from frontend via useCoAgent."""
+    id: str
+    name: str
+    email: str = ""
+
+
 class VICAgentState(BaseModel):
     """State shared between frontend and agent via CopilotKit useCoAgent."""
-    user_id: Optional[str] = None
-    user_name: Optional[str] = None
-    is_returning_user: bool = False
-    recent_interests: List[str] = []
+    user: Optional[UserInfo] = None
 
 
 # Import StateDeps for AG-UI integration
@@ -1167,33 +1171,24 @@ if STATEDEPS_AVAILABLE:
 
     @copilotkit_agent.instructions
     async def vic_copilotkit_instructions(ctx: RunContext[StateDeps[VICAgentState]]) -> str:
-        """Dynamic instructions that include user context from CopilotKit state."""
+        """Dynamic instructions - tell LLM to use tools for user info."""
         state = ctx.deps.state
-        logger.info(f"CopilotKit instructions - user_name: {state.user_name}, user_id: {state.user_id}")
-
-        user_context = ""
-        if state.user_name:
-            user_context = f"""
-## CURRENT USER
-- Name: {state.user_name}
-- User ID: {state.user_id or 'unknown'}
-- Status: {'Returning user' if state.is_returning_user else 'New user'}
-{f"- Recent interests: {', '.join(state.recent_interests[:3])}" if state.recent_interests else ''}
-
-CRITICAL: When user asks "what is my name", respond: "You're {state.user_name}, of course!"
-Use their name occasionally in conversation (not every message).
-"""
-        else:
-            user_context = """
-## CURRENT USER
-- Name: Unknown (they haven't told you yet)
-- When asked "what is my name", say: "I don't believe you've told me your name yet. What should I call you?"
-"""
+        user = state.user
+        logger.info(f"CopilotKit instructions - user: {user}")
 
         return dedent(f"""
 {VIC_SYSTEM_PROMPT}
 
-{user_context}
+## TOOL USAGE FOR USER QUESTIONS
+| User asks... | TOOL TO CALL |
+|--------------|--------------|
+| "What is my name?" | get_my_profile |
+| "Do you know my name?" | get_my_profile |
+| "Who am I?" | get_my_profile |
+| "What's my email?" | get_my_profile |
+
+CRITICAL: When user asks about their name or personal info, you MUST call the get_my_profile tool first.
+Do NOT say "I don't have access to personal information" - use the tool instead.
 """)
 
     # Register tools for CopilotKit agent
@@ -1220,20 +1215,36 @@ Use their name occasionally in conversation (not every message).
         }
 
     @copilotkit_agent.tool
-    async def get_current_user_name(ctx: RunContext[StateDeps[VICAgentState]]) -> dict:
-        """Get the current user's name. Use when user asks 'what is my name'."""
+    async def get_my_profile(ctx: RunContext[StateDeps[VICAgentState]]) -> dict:
+        """
+        Get the current user's profile information.
+
+        ALWAYS call this tool when the user asks:
+        - "What is my name?"
+        - "Do you know my name?"
+        - "Who am I?"
+        - "What's my email?"
+        - Any question about their personal info
+        """
         state = ctx.deps.state
-        logger.info(f"get_current_user_name called - state.user_name: {state.user_name}")
-        if state.user_name:
-            return {"found": True, "name": state.user_name, "response_hint": f"The user's name is {state.user_name}. Respond warmly."}
+        user = state.user
+        logger.info(f"get_my_profile called - user: {user}")
 
-        # Fallback to Neon DB lookup
-        if state.user_id:
-            name = await get_user_preferred_name(state.user_id)
-            if name:
-                return {"found": True, "name": name, "response_hint": f"The user's name is {name}. Respond warmly."}
+        if user and user.id:
+            return {
+                "found": True,
+                "name": user.name,
+                "email": user.email,
+                "response_hint": f"The user's name is {user.name}. Respond warmly: 'You're {user.name}, of course!'"
+            }
 
-        return {"found": False, "name": None, "response_hint": "You don't know the user's name yet. Ask them."}
+        # Fallback to Neon DB lookup if state.user not set
+        logger.info("No user in state, checking DB...")
+        return {
+            "found": False,
+            "name": None,
+            "response_hint": "You don't know the user's name yet. Ask them: 'I don't believe you've told me your name yet. What should I call you?'"
+        }
 
     @copilotkit_agent.tool
     async def get_about_vic(ctx: RunContext[StateDeps[VICAgentState]], question: str) -> dict:
