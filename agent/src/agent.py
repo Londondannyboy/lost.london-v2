@@ -518,7 +518,6 @@ async def get_about_vic(ctx: RunContext[VICDeps], question: str) -> dict:
 
     Use this when the user asks:
     - "who are you" / "what are you"
-    - "what books have you written"
     - "tell me about yourself"
     - Any personal question about VIC
 
@@ -540,6 +539,43 @@ async def get_about_vic(ctx: RunContext[VICDeps], question: str) -> dict:
             "specialty": "Hidden London history - lost buildings, forgotten places, untold stories"
         },
         "response_hint": "Respond in first person as Vic Keegan. Be warm and personable."
+    }
+
+
+@agent.tool
+async def show_books(ctx: RunContext[VICDeps]) -> dict:
+    """
+    Show Vic Keegan's books with cover images and purchase links.
+
+    Use this when the user asks about books, e.g.:
+    - "what books have you written"
+    - "show me your books"
+    - "where can I buy your books"
+    """
+    return {
+        "found": True,
+        "books": [
+            {
+                "title": "Lost London Volume 1",
+                "cover": "/lost-london-cover-1.jpg",
+                "link": "https://www.waterstones.com/author/vic-keegan/4942784",
+                "description": "The first collection of hidden London stories"
+            },
+            {
+                "title": "Lost London Volume 2",
+                "cover": "/lost-london-cover-2.jpg",
+                "link": "https://www.waterstones.com/author/vic-keegan/4942784",
+                "description": "More forgotten places and untold tales"
+            },
+            {
+                "title": "Thorney: London's Forgotten Island",
+                "cover": "/Thorney London's Forgotten book cover.jpg",
+                "link": "https://shop.ingramspark.com/b/084?params=NwS1eOq0iGczj35Zm0gAawIEcssFFDCeMABwVB9c3gn",
+                "description": "The hidden island beneath Westminster"
+            }
+        ],
+        "ui_component": "BookDisplay",
+        "response_hint": "Mention the books briefly and that they can see/buy them in the display."
     }
 
 

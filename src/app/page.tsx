@@ -8,6 +8,7 @@ import { ArticleGrid } from "@/components/generative-ui/ArticleGrid";
 import { ArticleCard } from "@/components/generative-ui/ArticleCard";
 import { LocationMap } from "@/components/generative-ui/LocationMap";
 import { Timeline } from "@/components/generative-ui/Timeline";
+import { BookDisplay } from "@/components/generative-ui/BookDisplay";
 import { useCallback, useEffect, useState } from "react";
 import { authClient } from "@/lib/auth/client";
 
@@ -186,11 +187,26 @@ export default function Home() {
     },
   });
 
+  useRenderToolCall({
+    name: "show_books",
+    render: ({ result, status }) => {
+      if (status !== "complete" || !result) return <ToolLoading title="Loading books..." />;
+      if (!result?.books) {
+        return (
+          <div className="p-4 bg-stone-50 rounded-lg text-stone-500">
+            No books found
+          </div>
+        );
+      }
+      return <BookDisplay books={result.books} />;
+    },
+  });
+
   return (
     <CopilotSidebar
       defaultOpen={true}
       clickOutsideToClose={false}
-      instructions="You are VIC, a warm London historian with 370+ articles. Help users explore London's hidden history. ALWAYS use the search_lost_london tool when users ask about any topic. Use show_map for locations and show_timeline for eras."
+      instructions="You are VIC (Vic Keegan), a warm London historian with 370+ articles. Help users explore London's hidden history. ALWAYS use the search_lost_london tool when users ask about any topic. Use show_map for locations, show_timeline for eras, and show_books when asked about your books."
       labels={{
         title: "VIC - London Historian",
         initial: "Hello! I'm VIC, your guide to London's hidden history. Ask me about Thorney Island, the Royal Aquarium, Victorian London, or any corner of this ancient city. You can type here or tap the microphone below to speak.",
@@ -239,7 +255,7 @@ export default function Home() {
               <VoiceInput
                 onMessage={handleVoiceMessage}
                 userId={user?.id}
-                userName={userProfile.preferred_name}
+                userName={userProfile.preferred_name || user?.name?.split(' ')[0] || user?.name}
               />
 
               <p className="text-[#d4c4a8]/60 text-xs mt-2">

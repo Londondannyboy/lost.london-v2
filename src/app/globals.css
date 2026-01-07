@@ -25,3 +25,65 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* CopilotKit visibility fixes */
+
+/* Main toggle button - cream/gold to match voice button */
+.copilotKitButton {
+  background-color: #f4ead5 !important;
+  border: 2px solid #8b6914 !important;
+  color: #2a231a !important;
+}
+
+.copilotKitButton:hover {
+  background-color: #fff !important;
+}
+
+.copilotKitButton svg,
+.copilotKitButtonIcon svg {
+  color: #2a231a !important;
+  fill: #2a231a !important;
+}
+
+/* When sidebar is open */
+.copilotKitButton.open {
+  background-color: #8b6914 !important;
+}
+
+.copilotKitButton.open svg {
+  color: #f4ead5 !important;
+  fill: #f4ead5 !important;
+}
+
+/* Input send button - make visible */
+.copilotKitInputControlButton {
+  background-color: #8b6914 !important;
+  color: #f4ead5 !important;
+}
+
+.copilotKitInputControlButton:hover {
+  background-color: #6d5310 !important;
+}
+
+.copilotKitInputControlButton svg {
+  color: #f4ead5 !important;
+}
+
+/* Message control buttons (copy, thumbs up/down) */
+.copilotKitMessageControlButton {
+  color: #666 !important;
+}
+
+.copilotKitMessageControlButton:hover {
+  color: #8b6914 !important;
+  background-color: #f4ead5 !important;
+}
+
+/* Header close button */
+.copilotKitHeaderCloseButton {
+  color: #666 !important;
+}
+
+.copilotKitHeaderCloseButton:hover {
+  color: #000 !important;
+}
