@@ -10,6 +10,7 @@ import { LocationMap } from "@/components/generative-ui/LocationMap";
 import { Timeline } from "@/components/generative-ui/Timeline";
 import { BookDisplay } from "@/components/generative-ui/BookDisplay";
 import { LibrarianMessage, LibrarianThinking } from "@/components/LibrarianAvatar";
+import { CustomUserMessage, CustomAssistantMessage } from "@/components/ChatMessages";
 import { useCallback, useEffect, useState } from "react";
 import { authClient } from "@/lib/auth/client";
 
@@ -385,6 +386,8 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
         initial: initialMessage,
       }}
       className="border-l border-stone-200"
+      UserMessage={CustomUserMessage}
+      AssistantMessage={CustomAssistantMessage}
     >
       {/* Main Content - Voice-First Hero */}
       <div className="bg-white text-black min-h-screen">
