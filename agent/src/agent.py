@@ -687,8 +687,13 @@ async def get_current_user_name(ctx: RunContext[VICDeps]) -> dict:
 # FASTAPI APPLICATION
 # =============================================================================
 
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("vic")
+logger.setLevel(logging.INFO)
+
 app = FastAPI(title="VIC - Lost London Agent")
-print("[VIC] DEPLOY VERSION: 2026-01-07-v3", file=sys.stderr)
+logger.info("DEPLOY VERSION: 2026-01-07-v5")
 
 app.add_middleware(
     CORSMiddleware,
@@ -817,6 +822,7 @@ async def clm_endpoint(request: Request):
     Hume sends messages here and expects SSE streaming responses.
     Now with Zep memory integration for returning user recognition.
     """
+    logger.info("CLM endpoint called!")
     global _last_request_debug
 
     body = await request.json()
@@ -902,12 +908,15 @@ async def clm_endpoint(request: Request):
 
     # Greeting detection - matches lost.london-clm pattern
     # Hume sends "speak your greeting" or user says "hello"
+    normalized_lower = normalized_query.lower().strip()
+    user_msg_lower = user_msg.lower()
     is_greeting_request = (
-        "speak your greeting" in user_msg.lower() or
-        normalized_query.lower().strip() in ["hello", "hi", "hey", "hiya", "howdy", "greetings", "start"] or
-        normalized_query.lower().startswith("hello ") or
-        normalized_query.lower().startswith("hi ")
+        "speak your greeting" in user_msg_lower or
+        normalized_lower in ["hello", "hi", "hey", "hiya", "howdy", "greetings", "start"] or
+        normalized_lower.startswith("hello ") or
+        normalized_lower.startswith("hi ")
     )
+    logger.info(f"Greeting check: user_msg='{user_msg}', normalized='{normalized_lower}', is_greeting={is_greeting_request}")
 
     if is_greeting_request:
         ctx = get_session_context(session_id or "default")
@@ -1137,7 +1146,8 @@ print("[VIC] CopilotKit AG-UI endpoint ready", file=sys.stderr)
 @app.get("/")
 async def health():
     """Health check endpoint."""
-    return {"status": "ok", "agent": "VIC - Lost London", "version": "2026-01-07-v2"}
+    logger.info("Health endpoint called!")
+    return {"status": "ok", "agent": "VIC - Lost London", "version": "2026-01-07-v5"}
 
 
 @app.get("/health")
