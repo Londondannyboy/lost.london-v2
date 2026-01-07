@@ -336,6 +336,29 @@ After exploring the topic in depth, end with a natural follow-up question:
 
 
 # =============================================================================
+# AGENT STATE FOR COPILOTKIT (StateDeps pattern)
+# =============================================================================
+
+from pydantic import BaseModel
+
+class VICAgentState(BaseModel):
+    """State shared between frontend and agent via CopilotKit."""
+    user_id: Optional[str] = None
+    user_name: Optional[str] = None
+    is_returning_user: bool = False
+    recent_interests: List[str] = []
+
+
+# Import StateDeps for AG-UI integration
+try:
+    from pydantic_ai.ag_ui import StateDeps
+    AGUI_AVAILABLE = True
+except ImportError:
+    AGUI_AVAILABLE = False
+    print("[VIC] Warning: pydantic_ai.ag_ui not available", file=sys.stderr)
+
+
+# =============================================================================
 # AGENT DEPENDENCIES
 # =============================================================================
 
@@ -1016,14 +1039,105 @@ Remember: ONLY use information from the source material above. Go into DEPTH (15
 
 
 # =============================================================================
-# AG-UI ENDPOINT FOR COPILOTKIT
+# AG-UI ENDPOINT FOR COPILOTKIT (with StateDeps for user context)
 # =============================================================================
 
-# Create AG-UI app from agent
-agui_app = agent.to_ag_ui(deps=VICDeps(state=AppState()))
+if AGUI_AVAILABLE:
+    from textwrap import dedent
 
-# Mount AG-UI at /agui
-app.mount("/agui", agui_app)
+    # Create CopilotKit agent with StateDeps to receive user context from frontend
+    copilotkit_agent = Agent(
+        'google-gla:gemini-2.0-flash',
+        deps_type=StateDeps[VICAgentState],
+        retries=2,
+    )
+
+    @copilotkit_agent.instructions
+    async def vic_instructions(ctx: RunContext[StateDeps[VICAgentState]]) -> str:
+        """Dynamic instructions that include user context from CopilotKit state."""
+        state = ctx.deps.state
+
+        user_context = ""
+        if state.user_name:
+            user_context = f"""
+## CURRENT USER
+- Name: {state.user_name}
+- User ID: {state.user_id or 'unknown'}
+- Status: {'Returning user' if state.is_returning_user else 'New user'}
+{f"- Recent interests: {', '.join(state.recent_interests[:3])}" if state.recent_interests else ''}
+
+When asked "what is my name", respond: "You're {state.user_name}, of course!"
+Use their name occasionally in conversation (not every message).
+"""
+        else:
+            user_context = """
+## CURRENT USER
+- Name: Unknown (they haven't told you yet)
+- When asked "what is my name", say: "I don't believe you've told me your name yet. What should I call you?"
+"""
+
+        return dedent(f"""
+{VIC_SYSTEM_PROMPT}
+
+{user_context}
+""")
+
+    # Register the same tools for CopilotKit agent
+    @copilotkit_agent.tool
+    async def search_lost_london(ctx: RunContext[StateDeps[VICAgentState]], query: str) -> dict:
+        """Search Lost London articles. Use for any London history topic."""
+        results = await search_articles(query, limit=5)
+        if not results.articles:
+            return {"found": False, "message": "No articles found"}
+
+        context_parts = []
+        article_cards = []
+        for article in results.articles[:3]:
+            context_parts.append(f"## {article.title}\n{article.content[:2000]}")
+            article_cards.append({
+                "id": article.id, "title": article.title,
+                "excerpt": article.content[:200] + "...", "score": article.score,
+            })
+
+        return {
+            "found": True, "query": results.query,
+            "source_content": "\n\n".join(context_parts),
+            "articles": article_cards, "ui_component": "ArticleGrid",
+        }
+
+    @copilotkit_agent.tool
+    async def get_my_name(ctx: RunContext[StateDeps[VICAgentState]]) -> dict:
+        """Get the current user's name. Use when user asks 'what is my name'."""
+        state = ctx.deps.state
+        if state.user_name:
+            return {"found": True, "name": state.user_name}
+
+        # Fallback to Neon DB lookup
+        if state.user_id:
+            name = await get_user_preferred_name(state.user_id)
+            if name:
+                return {"found": True, "name": name}
+
+        return {"found": False, "name": None}
+
+    @copilotkit_agent.tool
+    async def get_about_vic(ctx: RunContext[StateDeps[VICAgentState]], question: str) -> dict:
+        """Answer questions about VIC/Vic Keegan."""
+        return {
+            "found": True,
+            "about": {"name": "Vic Keegan", "role": "London historian", "articles": 372},
+            "response_hint": "Respond in first person as Vic Keegan."
+        }
+
+    # Create AG-UI app with StateDeps
+    agui_app = copilotkit_agent.to_ag_ui(deps=StateDeps(VICAgentState()))
+    app.mount("/agui", agui_app)
+    print("[VIC] CopilotKit AG-UI endpoint ready with StateDeps", file=sys.stderr)
+else:
+    # Fallback without StateDeps
+    agui_app = agent.to_ag_ui(deps=VICDeps(state=AppState()))
+    app.mount("/agui", agui_app)
+    print("[VIC] CopilotKit AG-UI endpoint ready (no StateDeps)", file=sys.stderr)
 
 
 # =============================================================================

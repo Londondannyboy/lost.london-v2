@@ -1,7 +1,7 @@
 "use client";
 
 import { CopilotSidebar } from "@copilotkit/react-ui";
-import { useRenderToolCall, useCopilotChat, useCopilotReadable } from "@copilotkit/react-core";
+import { useRenderToolCall, useCopilotChat, useCopilotReadable, useCoAgent } from "@copilotkit/react-core";
 import { Role, TextMessage } from "@copilotkit/runtime-client-gql";
 import { VoiceInput } from "@/components/voice-input";
 import { ArticleGrid } from "@/components/generative-ui/ArticleGrid";
@@ -99,7 +99,7 @@ export default function Home() {
   // Get user's first name for personalization
   const userName = userProfile.preferred_name || user?.name?.split(' ')[0] || user?.name;
 
-  // Provide user context to CopilotKit agent
+  // Provide user context to CopilotKit agent via useCopilotReadable (for instructions)
   useCopilotReadable({
     description: "Current user information for personalization",
     value: {
@@ -109,6 +109,35 @@ export default function Home() {
       recentInterests: userProfile.facts?.slice(0, 5) || [],
     },
   });
+
+  // Use useCoAgent to pass state to the Pydantic AI agent (StateDeps pattern)
+  // This makes user_id, user_name available in ctx.deps.state on the backend
+  type VICAgentState = {
+    user_id: string | null;
+    user_name: string | null;
+    is_returning_user: boolean;
+    recent_interests: string[];
+  };
+
+  const { setState } = useCoAgent<VICAgentState>({
+    name: "vic_agent",
+    initialState: {
+      user_id: user?.id || null,
+      user_name: userName || null,
+      is_returning_user: userProfile.isReturningUser || false,
+      recent_interests: userProfile.facts?.slice(0, 5) || [],
+    },
+  });
+
+  // Update agent state when user context changes
+  useEffect(() => {
+    setState({
+      user_id: user?.id || null,
+      user_name: userName || null,
+      is_returning_user: userProfile.isReturningUser || false,
+      recent_interests: userProfile.facts?.slice(0, 5) || [],
+    });
+  }, [user?.id, userName, userProfile.isReturningUser, userProfile.facts, setState]);
 
   // Handle voice messages - forward to CopilotKit and store to Zep
   // Voice → onMessage → appendMessage → Pydantic AI Agent → useRenderToolCall → Generative UI
