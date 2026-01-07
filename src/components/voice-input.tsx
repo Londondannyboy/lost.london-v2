@@ -160,12 +160,12 @@ RULES:
             <div className="w-4 h-4 bg-white rounded-full animate-ping" />
           )
         ) : (
-          // Mic icon
-          <svg className="w-10 h-10 text-[#2a231a]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          // Mic icon - gold to match border, visible on cream background
+          <svg className="w-10 h-10 text-[#8b6914]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
-              strokeWidth={2}
+              strokeWidth={2.5}
               d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
             />
           </svg>

@@ -1179,16 +1179,30 @@ if STATEDEPS_AVAILABLE:
         return dedent(f"""
 {VIC_SYSTEM_PROMPT}
 
-## TOOL USAGE FOR USER QUESTIONS
+## TOOL USAGE - ALWAYS USE THESE TOOLS
 | User asks... | TOOL TO CALL |
 |--------------|--------------|
 | "What is my name?" | get_my_profile |
-| "Do you know my name?" | get_my_profile |
-| "Who am I?" | get_my_profile |
 | "What's my email?" | get_my_profile |
+| "What are my interests?" | get_my_interests |
+| "What do I like?" | get_my_interests |
+| "What have I asked about?" | get_conversation_history |
+| "What did we discuss?" | get_conversation_history |
+| "Do you remember...?" | get_conversation_history |
+| Any London history topic | search_lost_london |
 
-CRITICAL: When user asks about their name or personal info, you MUST call the get_my_profile tool first.
-Do NOT say "I don't have access to personal information" - use the tool instead.
+CRITICAL RULES:
+- When user asks about personal info, ALWAYS call the appropriate tool first
+- NEVER say "I don't have access to personal information" - use the tools instead
+- If a tool returns data, use it in your response
+
+## CONVERSATION STYLE RULES
+1. DON'T keep saying the user's name - use it sparingly (maybe once per 3-4 messages)
+2. DON'T reintroduce yourself each message - no "I'm Vic" after the first greeting
+3. DON'T say "Hello" or "Hi" after the initial greeting
+4. KEEP responses fluid and conversational
+5. BE quick and substantive - get to the interesting content fast
+6. ALWAYS end with a follow-up question to keep conversation flowing
 """)
 
     # Register tools for CopilotKit agent
@@ -1245,6 +1259,77 @@ Do NOT say "I don't have access to personal information" - use the tool instead.
             "name": None,
             "response_hint": "You don't know the user's name yet. Ask them: 'I don't believe you've told me your name yet. What should I call you?'"
         }
+
+    @copilotkit_agent.tool
+    async def get_my_interests(ctx: RunContext[StateDeps[VICAgentState]]) -> dict:
+        """
+        Get the user's interests and facts from memory.
+
+        ALWAYS call this tool when the user asks:
+        - "What are my interests?"
+        - "What do I like?"
+        - "What topics interest me?"
+        """
+        state = ctx.deps.state
+        user = state.user
+        logger.info(f"get_my_interests called - user: {user}")
+
+        if not user or not user.id:
+            return {"found": False, "interests": [], "response_hint": "You don't know the user yet."}
+
+        # Get facts from Zep memory
+        memory = await get_user_memory(user.id)
+        facts = memory.get("facts", [])
+
+        if facts:
+            return {
+                "found": True,
+                "interests": facts[:10],
+                "response_hint": f"The user has shown interest in: {', '.join(facts[:5])}"
+            }
+
+        return {"found": False, "interests": [], "response_hint": "You haven't learned about their interests yet. Ask what topics interest them."}
+
+    @copilotkit_agent.tool
+    async def get_conversation_history(ctx: RunContext[StateDeps[VICAgentState]]) -> dict:
+        """
+        Get what topics the user has asked about before.
+
+        ALWAYS call this tool when the user asks:
+        - "What have I asked you about?"
+        - "What did we talk about?"
+        - "What have we discussed?"
+        - "Do you remember what I asked?"
+        """
+        state = ctx.deps.state
+        user = state.user
+        logger.info(f"get_conversation_history called - user: {user}")
+
+        if not user or not user.id:
+            return {"found": False, "topics": [], "response_hint": "You don't know the user yet."}
+
+        # Get facts from Zep memory - these include topics discussed
+        memory = await get_user_memory(user.id)
+        facts = memory.get("facts", [])
+
+        # Filter for topic-related facts
+        topics = [f for f in facts if any(kw in f.lower() for kw in ['asked', 'interested', 'discussed', 'talked', 'mentioned', 'london', 'history'])]
+
+        if topics:
+            return {
+                "found": True,
+                "topics": topics[:10],
+                "response_hint": f"You remember discussing: {', '.join(topics[:3])}"
+            }
+
+        if facts:
+            return {
+                "found": True,
+                "topics": facts[:5],
+                "response_hint": f"From your memory: {', '.join(facts[:3])}"
+            }
+
+        return {"found": False, "topics": [], "response_hint": "This appears to be a new conversation. Ask what they'd like to explore."}
 
     @copilotkit_agent.tool
     async def get_about_vic(ctx: RunContext[StateDeps[VICAgentState]], question: str) -> dict:
