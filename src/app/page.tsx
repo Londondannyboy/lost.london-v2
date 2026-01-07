@@ -1,7 +1,7 @@
 "use client";
 
 import { CopilotSidebar } from "@copilotkit/react-ui";
-import { useRenderToolCall, useCopilotChat, useCopilotReadable, useCoAgent } from "@copilotkit/react-core";
+import { useRenderToolCall, useCopilotChat } from "@copilotkit/react-core";
 import { Role, TextMessage } from "@copilotkit/runtime-client-gql";
 import { VoiceInput } from "@/components/voice-input";
 import { ArticleGrid } from "@/components/generative-ui/ArticleGrid";
@@ -98,46 +98,6 @@ export default function Home() {
 
   // Get user's first name for personalization
   const userName = userProfile.preferred_name || user?.name?.split(' ')[0] || user?.name;
-
-  // Provide user context to CopilotKit agent via useCopilotReadable (for instructions)
-  useCopilotReadable({
-    description: "Current user information for personalization",
-    value: {
-      userId: user?.id || null,
-      userName: userName || null,
-      isReturningUser: userProfile.isReturningUser || false,
-      recentInterests: userProfile.facts?.slice(0, 5) || [],
-    },
-  });
-
-  // Use useCoAgent to pass state to the Pydantic AI agent (StateDeps pattern)
-  // This makes user_id, user_name available in ctx.deps.state on the backend
-  type VICAgentState = {
-    user_id: string | null;
-    user_name: string | null;
-    is_returning_user: boolean;
-    recent_interests: string[];
-  };
-
-  const { setState } = useCoAgent<VICAgentState>({
-    name: "vic_agent",
-    initialState: {
-      user_id: user?.id || null,
-      user_name: userName || null,
-      is_returning_user: userProfile.isReturningUser || false,
-      recent_interests: userProfile.facts?.slice(0, 5) || [],
-    },
-  });
-
-  // Update agent state when user context changes
-  useEffect(() => {
-    setState({
-      user_id: user?.id || null,
-      user_name: userName || null,
-      is_returning_user: userProfile.isReturningUser || false,
-      recent_interests: userProfile.facts?.slice(0, 5) || [],
-    });
-  }, [user?.id, userName, userProfile.isReturningUser, userProfile.facts, setState]);
 
   // Handle voice messages - forward to CopilotKit and store to Zep
   // Voice → onMessage → appendMessage → Pydantic AI Agent → useRenderToolCall → Generative UI
@@ -246,20 +206,36 @@ export default function Home() {
   });
 
   // Build dynamic instructions with user context
-  const instructions = `You are VIC (Vic Keegan), a warm London historian with 370+ articles. Help users explore London's hidden history.
+  // NOTE: The backend middleware extracts user info by looking for "User Name:", "User ID:", etc.
+  const instructions = user
+    ? `You are VIC (Vic Keegan), a warm London historian with 370+ articles. Help users explore London's hidden history.
 
-## CURRENT USER CONTEXT
+## USER CONTEXT (for backend extraction)
+- User Name: ${userName || user.name || 'unknown'}
+- User ID: ${user.id}
+- User Email: ${user.email || 'unknown'}
+- Status: ${userProfile.isReturningUser ? 'Returning user' : 'New user'}
+${userProfile.facts?.length ? `- Recent interests: ${userProfile.facts.slice(0, 3).join(', ')}` : ''}
+
+## RULES FOR THIS USER
 ${userName ? `The user's name is "${userName}". Use their name occasionally (not every message).` : 'The user has not provided their name yet.'}
-${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly and reference past conversations.' : 'This may be a new user.'}
-${userProfile.facts?.length ? `User's recent interests: ${userProfile.facts.slice(0, 3).join(', ')}` : ''}
+${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' : ''}
 
-## CRITICAL RULES
+## CRITICAL IDENTITY RULES
 - NEVER say "I am a language model" or "I don't have access to personal information"
 - You ARE Vic Keegan. Stay in character always.
-- If asked "what is my name": ${userName ? `Answer "Your name is ${userName}!"` : 'Say "I don\'t believe you\'ve told me your name yet. What should I call you?"'}
+- If asked "what is my name": ${userName ? `Answer "You're ${userName}, of course!"` : 'Say "I don\'t believe you\'ve told me your name yet. What should I call you?"'}
 - If asked about yourself: "I'm Vic Keegan, London historian and author of the Lost London books"
 - ALWAYS use the search_lost_london tool when users ask about any London topic
-- Use show_map for locations, show_timeline for eras, show_books when asked about your books`;
+- Use show_map for locations, show_timeline for eras, show_books when asked about your books`
+    : `You are VIC (Vic Keegan), a warm London historian with 370+ articles. Help users explore London's hidden history. The user is not logged in.
+
+## CRITICAL IDENTITY RULES
+- NEVER say "I am a language model" or "I don't have access to personal information"
+- You ARE Vic Keegan. Stay in character always.
+- If asked "what is my name": Say "I don't believe you've told me your name yet. What should I call you?"
+- If asked about yourself: "I'm Vic Keegan, London historian and author of the Lost London books"
+- ALWAYS use the search_lost_london tool when users ask about any London topic`;
 
   // Build personalized initial message
   const initialMessage = userName

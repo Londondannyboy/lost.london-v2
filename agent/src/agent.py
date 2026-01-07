@@ -52,6 +52,9 @@ _session_contexts: OrderedDict = OrderedDict()
 MAX_SESSIONS = 100
 NAME_COOLDOWN_TURNS = 3  # Don't use name for 3 turns after using it
 
+# Global user context cache - populated by middleware from CopilotKit instructions
+_current_user_context: dict = {}
+
 @dataclass
 class SessionContext:
     """Track conversation state per session for name spacing and greeting."""
@@ -335,27 +338,6 @@ After exploring the topic in depth, end with a natural follow-up question:
 - NEVER end without a question - this keeps the conversation flowing"""
 
 
-# =============================================================================
-# AGENT STATE FOR COPILOTKIT (StateDeps pattern)
-# =============================================================================
-
-from pydantic import BaseModel
-
-class VICAgentState(BaseModel):
-    """State shared between frontend and agent via CopilotKit."""
-    user_id: Optional[str] = None
-    user_name: Optional[str] = None
-    is_returning_user: bool = False
-    recent_interests: List[str] = []
-
-
-# Import StateDeps for AG-UI integration
-try:
-    from pydantic_ai.ag_ui import StateDeps
-    AGUI_AVAILABLE = True
-except ImportError:
-    AGUI_AVAILABLE = False
-    print("[VIC] Warning: pydantic_ai.ag_ui not available", file=sys.stderr)
 
 
 # =============================================================================
@@ -663,7 +645,18 @@ async def get_current_user_name(ctx: RunContext[VICDeps]) -> dict:
 
     Returns the user's name if known, or indicates they haven't shared it.
     """
-    # First check if name is in deps
+    # First check global cache from middleware (CopilotKit instructions)
+    global _current_user_context
+    if _current_user_context.get("user_name"):
+        name = _current_user_context["user_name"]
+        print(f"[VIC Tool] Found user name in cache: {name}", file=sys.stderr)
+        return {
+            "found": True,
+            "name": name,
+            "response_hint": f"The user's name is {name}. Respond warmly."
+        }
+
+    # Second, check if name is in deps
     if ctx.deps.user_name:
         return {
             "found": True,
@@ -672,9 +665,11 @@ async def get_current_user_name(ctx: RunContext[VICDeps]) -> dict:
         }
 
     # Try to look up from database if we have user_id
-    if ctx.deps.user_id:
-        name = await get_user_preferred_name(ctx.deps.user_id)
+    user_id = _current_user_context.get("user_id") or ctx.deps.user_id
+    if user_id:
+        name = await get_user_preferred_name(user_id)
         if name:
+            print(f"[VIC Tool] Found user name in DB: {name}", file=sys.stderr)
             return {
                 "found": True,
                 "name": name,
@@ -1039,105 +1034,99 @@ Remember: ONLY use information from the source material above. Go into DEPTH (15
 
 
 # =============================================================================
-# AG-UI ENDPOINT FOR COPILOTKIT (with StateDeps for user context)
+# USER CONTEXT EXTRACTION FROM COPILOTKIT INSTRUCTIONS
 # =============================================================================
 
-if AGUI_AVAILABLE:
-    from textwrap import dedent
+def extract_user_from_instructions(content: str) -> dict:
+    """
+    Extract user info from CopilotKit instructions system message.
+    Frontend sends: "CRITICAL USER CONTEXT:\n- User Name: Dan\n- User ID: abc123..."
+    """
+    import re
+    context = {}
 
-    # Create CopilotKit agent with StateDeps to receive user context from frontend
-    copilotkit_agent = Agent(
-        'google-gla:gemini-2.0-flash',
-        deps_type=StateDeps[VICAgentState],
-        retries=2,
-    )
+    # User Name: Dan
+    match = re.search(r'User Name:\s*([^\n]+)', content)
+    if match:
+        name = match.group(1).strip()
+        if name and name.lower() not in ['unknown', 'undefined', 'null']:
+            context['user_name'] = name
 
-    @copilotkit_agent.instructions
-    async def vic_instructions(ctx: RunContext[StateDeps[VICAgentState]]) -> str:
-        """Dynamic instructions that include user context from CopilotKit state."""
-        state = ctx.deps.state
+    # User ID: abc123
+    match = re.search(r'User ID:\s*([^\n]+)', content)
+    if match:
+        user_id = match.group(1).strip()
+        if user_id and user_id.lower() not in ['unknown', 'undefined', 'null']:
+            context['user_id'] = user_id
 
-        user_context = ""
-        if state.user_name:
-            user_context = f"""
-## CURRENT USER
-- Name: {state.user_name}
-- User ID: {state.user_id or 'unknown'}
-- Status: {'Returning user' if state.is_returning_user else 'New user'}
-{f"- Recent interests: {', '.join(state.recent_interests[:3])}" if state.recent_interests else ''}
+    # User Email: dan@example.com
+    match = re.search(r'User Email:\s*([^\n]+)', content)
+    if match:
+        email = match.group(1).strip()
+        if email and email.lower() not in ['unknown', 'undefined', 'null']:
+            context['email'] = email
 
-When asked "what is my name", respond: "You're {state.user_name}, of course!"
-Use their name occasionally in conversation (not every message).
-"""
-        else:
-            user_context = """
-## CURRENT USER
-- Name: Unknown (they haven't told you yet)
-- When asked "what is my name", say: "I don't believe you've told me your name yet. What should I call you?"
-"""
+    # Status: Returning user
+    if 'returning user' in content.lower():
+        context['is_returning'] = True
 
-        return dedent(f"""
-{VIC_SYSTEM_PROMPT}
+    # Recent interests: topic1, topic2
+    match = re.search(r'Recent interests:\s*([^\n]+)', content)
+    if match:
+        interests = match.group(1).strip()
+        if interests:
+            context['interests'] = [i.strip() for i in interests.split(',')]
 
-{user_context}
-""")
+    return context
 
-    # Register the same tools for CopilotKit agent
-    @copilotkit_agent.tool
-    async def search_lost_london(ctx: RunContext[StateDeps[VICAgentState]], query: str) -> dict:
-        """Search Lost London articles. Use for any London history topic."""
-        results = await search_articles(query, limit=5)
-        if not results.articles:
-            return {"found": False, "message": "No articles found"}
 
-        context_parts = []
-        article_cards = []
-        for article in results.articles[:3]:
-            context_parts.append(f"## {article.title}\n{article.content[:2000]}")
-            article_cards.append({
-                "id": article.id, "title": article.title,
-                "excerpt": article.content[:200] + "...", "score": article.score,
-            })
+@app.middleware("http")
+async def extract_user_context_middleware(request: Request, call_next):
+    """
+    Middleware to extract user context from CopilotKit's instructions.
+    CopilotKit sends instructions as a system message in the request body.
+    """
+    global _current_user_context
 
-        return {
-            "found": True, "query": results.query,
-            "source_content": "\n\n".join(context_parts),
-            "articles": article_cards, "ui_component": "ArticleGrid",
-        }
+    # Only process AG-UI requests
+    if request.url.path.startswith("/agui"):
+        try:
+            # Read request body
+            body_bytes = await request.body()
+            if body_bytes:
+                body = json.loads(body_bytes)
+                messages = body.get("messages", [])
 
-    @copilotkit_agent.tool
-    async def get_my_name(ctx: RunContext[StateDeps[VICAgentState]]) -> dict:
-        """Get the current user's name. Use when user asks 'what is my name'."""
-        state = ctx.deps.state
-        if state.user_name:
-            return {"found": True, "name": state.user_name}
+                # Look for CopilotKit instructions in system messages
+                for msg in messages:
+                    if msg.get("role") == "system":
+                        content = msg.get("content", "")
+                        if isinstance(content, str) and "User Name:" in content:
+                            extracted = extract_user_from_instructions(content)
+                            if extracted:
+                                _current_user_context = extracted
+                                print(f"[VIC AG-UI] Extracted user context: {extracted}", file=sys.stderr)
 
-        # Fallback to Neon DB lookup
-        if state.user_id:
-            name = await get_user_preferred_name(state.user_id)
-            if name:
-                return {"found": True, "name": name}
+                # Reconstruct request with body
+                from starlette.requests import Request as StarletteRequest
+                scope = request.scope
+                async def receive():
+                    return {"type": "http.request", "body": body_bytes}
+                request = StarletteRequest(scope, receive)
+        except Exception as e:
+            print(f"[VIC AG-UI] Middleware error: {e}", file=sys.stderr)
 
-        return {"found": False, "name": None}
+    return await call_next(request)
 
-    @copilotkit_agent.tool
-    async def get_about_vic(ctx: RunContext[StateDeps[VICAgentState]], question: str) -> dict:
-        """Answer questions about VIC/Vic Keegan."""
-        return {
-            "found": True,
-            "about": {"name": "Vic Keegan", "role": "London historian", "articles": 372},
-            "response_hint": "Respond in first person as Vic Keegan."
-        }
 
-    # Create AG-UI app with StateDeps
-    agui_app = copilotkit_agent.to_ag_ui(deps=StateDeps(VICAgentState()))
-    app.mount("/agui", agui_app)
-    print("[VIC] CopilotKit AG-UI endpoint ready with StateDeps", file=sys.stderr)
-else:
-    # Fallback without StateDeps
-    agui_app = agent.to_ag_ui(deps=VICDeps(state=AppState()))
-    app.mount("/agui", agui_app)
-    print("[VIC] CopilotKit AG-UI endpoint ready (no StateDeps)", file=sys.stderr)
+# =============================================================================
+# AG-UI ENDPOINT FOR COPILOTKIT (simplified - uses middleware for user context)
+# =============================================================================
+
+# Mount the AG-UI app using the main agent (which has all the tools)
+agui_app = agent.to_ag_ui(deps=VICDeps(state=AppState()))
+app.mount("/agui", agui_app)
+print("[VIC] CopilotKit AG-UI endpoint ready", file=sys.stderr)
 
 
 # =============================================================================
@@ -1147,7 +1136,7 @@ else:
 @app.get("/")
 async def health():
     """Health check endpoint."""
-    return {"status": "ok", "agent": "VIC - Lost London"}
+    return {"status": "ok", "agent": "VIC - Lost London", "version": "2026-01-07-v2"}
 
 
 @app.get("/health")
