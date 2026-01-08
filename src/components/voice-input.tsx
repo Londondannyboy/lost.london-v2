@@ -102,6 +102,7 @@ RULES:
         console.log('[VIC Session] ================================');
 
         // Connect with sessionSettings (matches lost.london-app pattern exactly)
+        // Increase inactivity timeout to 60 seconds (default is 10s)
         await connect({
           auth: { type: 'accessToken' as const, value: accessToken },
           configId: configId,
@@ -109,7 +110,9 @@ RULES:
             type: 'session_settings' as const,
             systemPrompt,
             customSessionId: sessionIdWithName,
-          }
+          },
+          // Increase timeouts for better UX
+          reconnectAttempts: 3,
         });
 
         console.log('[VIC Session] Connected successfully');
