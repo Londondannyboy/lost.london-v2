@@ -1341,11 +1341,13 @@ from Roman London to Victorian music halls. Would you like to hear about any par
 
             # Use VOICE_SYSTEM_PROMPT for short, fast TTS responses
             # (VIC_SYSTEM_PROMPT says 150-250 words which is too long for voice)
+            # max_tokens=120 (~90 words) forces concise responses for fast TTS
             temp_agent = Agent(
                 'groq:llama-3.1-8b-instant',
                 deps_type=VICDeps,
                 system_prompt=VOICE_SYSTEM_PROMPT,
                 retries=2,
+                model_settings={'max_tokens': 120, 'temperature': 0.7},
             )
 
             # Run the agent with context - SHORT for voice (faster TTS)
