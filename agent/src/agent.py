@@ -910,7 +910,7 @@ logger = logging.getLogger("vic")
 logger.setLevel(logging.INFO)
 
 app = FastAPI(title="VIC - Lost London Agent")
-logger.info("DEPLOY VERSION: 2026-01-07-v5")
+logger.info("DEPLOY VERSION: 2026-01-08-two-stage-v1")
 
 app.add_middleware(
     CORSMiddleware,
@@ -919,6 +919,139 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# =============================================================================
+# TWO-STAGE VOICE ARCHITECTURE - INSTANT RESPONSES
+# =============================================================================
+
+# In-memory cache for instant keyword lookup (loaded on startup)
+_keyword_cache: dict = {}  # keyword -> article teaser data
+_cache_loaded: bool = False
+
+# Background results storage for "yes" responses
+_background_results: dict = {}  # session_id -> {query, content, articles, ready}
+
+
+async def load_keyword_cache():
+    """Load all article keywords into memory for instant lookup (<1ms)."""
+    global _keyword_cache, _cache_loaded
+
+    from .database import get_connection
+
+    try:
+        async with get_connection() as conn:
+            results = await conn.fetch("""
+                SELECT id, title, topic_keywords, teaser_location, teaser_era,
+                       teaser_hook, featured_image_url, slug
+                FROM articles
+                WHERE topic_keywords IS NOT NULL AND array_length(topic_keywords, 1) > 0
+            """)
+
+            for row in results:
+                teaser_data = {
+                    "id": row['id'],
+                    "title": row['title'],
+                    "location": row['teaser_location'],
+                    "era": row['teaser_era'],
+                    "hook": row['teaser_hook'],
+                    "image_url": row['featured_image_url'],
+                    "slug": row['slug'],
+                }
+                # Map each keyword to this article's teaser
+                for keyword in (row['topic_keywords'] or []):
+                    _keyword_cache[keyword.lower()] = teaser_data
+
+            _cache_loaded = True
+            logger.info(f"[VIC Cache] Loaded {len(_keyword_cache)} keywords from {len(results)} articles")
+    except Exception as e:
+        logger.error(f"[VIC Cache] Failed to load: {e}")
+        _cache_loaded = False
+
+
+def get_teaser_from_cache(query: str) -> dict | None:
+    """Ultra-fast keyword lookup (<1ms)."""
+    if not _cache_loaded:
+        return None
+
+    # Check each word in the query
+    for word in query.lower().split():
+        if len(word) > 2 and word in _keyword_cache:
+            return _keyword_cache[word]
+
+    # Also check multi-word phrases
+    query_lower = query.lower()
+    for keyword in _keyword_cache:
+        if keyword in query_lower:
+            return _keyword_cache[keyword]
+
+    return None
+
+
+# Fast teaser agent (instant recognition)
+_fast_teaser_agent = Agent(
+    'groq:llama-3.1-8b-instant',
+    system_prompt="""You are Vic Keegan, London historian. Give a brief, engaging teaser.
+
+Rules:
+- 1-2 sentences ONLY (under 40 words)
+- Start with "Ah, the [topic]..." or similar
+- Mention location and era if provided
+- End with "Shall I tell you more?" or similar question
+- Be warm and conversational""",
+    model_settings=ModelSettings(max_tokens=60, temperature=0.7),
+)
+
+
+async def generate_fast_teaser(teaser: dict, query: str) -> str:
+    """Generate instant teaser response (~200ms)."""
+    prompt = f"""Topic: {teaser['title']}
+Location: {teaser.get('location', 'London')}
+Era: {teaser.get('era', '')}
+Interesting fact: {teaser.get('hook', '')}
+
+User asked about: {query}
+
+Give a brief, engaging teaser (1-2 sentences). End with a follow-up question."""
+
+    try:
+        result = await _fast_teaser_agent.run(prompt)
+        return result.output
+    except Exception as e:
+        logger.error(f"[VIC Teaser] Error: {e}")
+        # Fallback to template
+        location = teaser.get('location', 'London')
+        era = teaser.get('era', '')
+        era_str = f" from the {era} era" if era else ""
+        return f"Ah, {teaser['title']}! A fascinating topic{era_str} in {location}. Shall I tell you more?"
+
+
+async def load_full_article_background(query: str, session_id: str):
+    """Background task: load full article content while user listens to teaser."""
+    try:
+        from .tools import search_articles
+
+        results = await search_articles(query, limit=3)
+        if results.articles:
+            content = "\n\n".join([
+                f"## {a.title}\n{a.content[:1500]}"
+                for a in results.articles[:2]
+            ])
+            _background_results[session_id] = {
+                "query": query,
+                "articles": results.articles,
+                "content": content,
+                "ready": True,
+            }
+            logger.info(f"[VIC Background] Loaded {len(results.articles)} articles for '{query}'")
+    except Exception as e:
+        logger.error(f"[VIC Background] Error loading articles: {e}")
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Load keyword cache on startup."""
+    await load_keyword_cache()
 
 
 # =============================================================================
@@ -1320,7 +1453,68 @@ from Roman London to Victorian music halls. Would you like to hear about any par
     # Increment turn counter for name spacing
     increment_turn(session_id)
 
-    # Search for relevant articles
+    # ==========================================================================
+    # STAGE 1: FAST PATH - Keyword cache lookup for instant response (<300ms)
+    # ==========================================================================
+    teaser = get_teaser_from_cache(normalized_query)
+    session_key = session_id or f"anon_{uuid.uuid4()}"
+
+    if teaser:
+        logger.info(f"[VIC Stage1] FAST MATCH: '{teaser['title']}' for query '{normalized_query}'")
+
+        # Store suggestion for "yes" handling
+        set_last_suggestion(session_key, teaser['title'])
+
+        # Kick off background loading (don't await - runs while user listens)
+        import asyncio
+        asyncio.create_task(load_full_article_background(normalized_query, session_key))
+
+        # Generate instant teaser response (~200ms)
+        response_text = await generate_fast_teaser(teaser, user_msg)
+
+        logger.info(f"[VIC Stage1] Teaser response: {response_text[:80]}...")
+
+        return StreamingResponse(
+            stream_sse_response(response_text, str(uuid.uuid4())),
+            media_type="text/event-stream"
+        )
+
+    # ==========================================================================
+    # STAGE 2: FULL SEARCH - No keyword match, do complete RRF search
+    # ==========================================================================
+    logger.info(f"[VIC Stage2] No cache match, doing full search for: {normalized_query}")
+
+    # Check if we have pre-loaded content from a previous "yes" response
+    if session_key in _background_results and _background_results[session_key].get("ready"):
+        bg_data = _background_results[session_key]
+        logger.info(f"[VIC Stage2] Using pre-loaded content for '{bg_data['query']}'")
+        # Use the pre-loaded content instead of searching again
+        context = bg_data["content"]
+        del _background_results[session_key]  # Clear after use
+
+        # Generate detailed response with pre-loaded content
+        detailed_agent = Agent(
+            'groq:llama-3.3-70b-versatile',
+            system_prompt=VOICE_SYSTEM_PROMPT,
+            model_settings=ModelSettings(max_tokens=200, temperature=0.7),
+        )
+
+        prompt = f"""SOURCE MATERIAL:
+{context}
+
+USER QUESTION: {user_msg}
+
+Give a detailed but concise response (3-4 sentences). End with a follow-up question."""
+
+        result = await detailed_agent.run(prompt)
+        response_text = result.output
+
+        return StreamingResponse(
+            stream_sse_response(response_text, str(uuid.uuid4())),
+            media_type="text/event-stream"
+        )
+
+    # Full search fallback
     try:
         results = await search_articles(normalized_query, limit=3)
 
