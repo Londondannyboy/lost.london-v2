@@ -988,10 +988,16 @@ def get_teaser_from_cache(query: str) -> dict | None:
     return None
 
 
-# Fast teaser agent (instant recognition)
-_fast_teaser_agent = Agent(
-    'groq:llama-3.1-8b-instant',
-    system_prompt="""You are Vic Keegan, London historian. Give a brief, engaging teaser.
+# Fast teaser agent (lazy initialization to avoid startup errors)
+_fast_teaser_agent = None
+
+def get_fast_teaser_agent():
+    """Lazy initialize fast teaser agent."""
+    global _fast_teaser_agent
+    if _fast_teaser_agent is None:
+        _fast_teaser_agent = Agent(
+            'groq:llama-3.1-8b-instant',
+            system_prompt="""You are Vic Keegan, London historian. Give a brief, engaging teaser.
 
 Rules:
 - 1-2 sentences ONLY (under 40 words)
@@ -999,8 +1005,9 @@ Rules:
 - Mention location and era if provided
 - End with "Shall I tell you more?" or similar question
 - Be warm and conversational""",
-    model_settings=ModelSettings(max_tokens=60, temperature=0.7),
-)
+            model_settings=ModelSettings(max_tokens=60, temperature=0.7),
+        )
+    return _fast_teaser_agent
 
 
 async def generate_fast_teaser(teaser: dict, query: str) -> str:
@@ -1015,7 +1022,8 @@ User asked about: {query}
 Give a brief, engaging teaser (1-2 sentences). End with a follow-up question."""
 
     try:
-        result = await _fast_teaser_agent.run(prompt)
+        agent = get_fast_teaser_agent()
+        result = await agent.run(prompt)
         return result.output
     except Exception as e:
         logger.error(f"[VIC Teaser] Error: {e}")
