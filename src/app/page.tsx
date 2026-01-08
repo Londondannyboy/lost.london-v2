@@ -1,6 +1,6 @@
 "use client";
 
-import { CopilotSidebar } from "@copilotkit/react-ui";
+import { CopilotSidebar, CopilotKitCSSProperties } from "@copilotkit/react-ui";
 import { useRenderToolCall, useCopilotChat, useCoAgent } from "@copilotkit/react-core";
 import { Role, TextMessage } from "@copilotkit/runtime-client-gql";
 import { VoiceInput } from "@/components/voice-input";
@@ -13,8 +13,25 @@ import { TopicContext } from "@/components/generative-ui/TopicContext";
 import { TopicImage } from "@/components/generative-ui/TopicImage";
 import { LibrarianMessage, LibrarianThinking } from "@/components/LibrarianAvatar";
 import { CustomUserMessage, ChatUserContext } from "@/components/ChatMessages";
-import { useCallback, useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { authClient } from "@/lib/auth/client";
+
+// Hook to detect mobile viewport
+function useIsMobile(breakpoint: number = 768) {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    // Check on mount
+    const checkMobile = () => setIsMobile(window.innerWidth < breakpoint);
+    checkMobile();
+
+    // Listen for resize
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, [breakpoint]);
+
+  return isMobile;
+}
 
 // Loading component for tool results
 function ToolLoading({ title }: { title: string }) {
@@ -261,6 +278,9 @@ export default function Home() {
   const { appendMessage } = useCopilotChat();
   const { data: session } = authClient.useSession();
   const user = session?.user;
+
+  // Collapse sidebar on mobile - voice is the primary experience
+  const isMobile = useIsMobile();
 
   // User profile state for Zep personalization
   const [userProfile, setUserProfile] = useState<{
@@ -632,11 +652,20 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
   // Background context value - memoized to prevent re-renders
   const backgroundContextValue = { setBackground: setTopicBackground };
 
+  // CopilotKit custom styling - soft London aesthetic
+  const copilotStyles: CopilotKitCSSProperties = {
+    "--copilot-kit-background-color": "rgba(250, 247, 240, 0.95)",
+    "--copilot-kit-secondary-color": "rgba(255, 255, 255, 0.9)",
+    "--copilot-kit-primary-color": "#8b6914",
+    "--copilot-kit-separator-color": "rgba(139, 105, 20, 0.2)",
+  };
+
   return (
     <BackgroundContext.Provider value={backgroundContextValue}>
     <ChatUserContext.Provider value={chatUserContextValue}>
+      <div style={copilotStyles}>
       <CopilotSidebar
-        defaultOpen={true}
+        defaultOpen={!isMobile}
         clickOutsideToClose={false}
         instructions={instructions}
         labels={{
@@ -724,6 +753,7 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
         </section>
       </div>
       </CopilotSidebar>
+      </div>
     </ChatUserContext.Provider>
     </BackgroundContext.Provider>
   );

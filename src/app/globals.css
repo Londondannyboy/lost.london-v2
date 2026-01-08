@@ -106,3 +106,41 @@ body {
 .copilotKitHeader [class*="pulse"] {
   display: none !important;
 }
+
+/* Soft London background for chat messages */
+.copilotKitMessages {
+  background-image:
+    linear-gradient(to bottom, rgba(250, 247, 240, 0.92), rgba(255, 255, 255, 0.95)),
+    url('/London Map with River.jpg');
+  background-size: cover;
+  background-position: center;
+  background-attachment: local;
+}
+
+/* Sidebar container styling */
+.copilotKitSidebar {
+  background-color: rgba(250, 247, 240, 0.98);
+}
+
+/* Header with subtle London feel */
+.copilotKitHeader {
+  background-color: rgba(250, 247, 240, 0.95) !important;
+  border-bottom: 1px solid rgba(139, 105, 20, 0.2) !important;
+}
+
+/* Input area styling */
+.copilotKitInput {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+  border-top: 1px solid rgba(139, 105, 20, 0.15) !important;
+}
+
+/* Message bubbles with soft edges */
+.copilotKitAssistantMessage {
+  background-color: rgba(255, 255, 255, 0.85) !important;
+  border: 1px solid rgba(139, 105, 20, 0.1) !important;
+}
+
+.copilotKitUserMessage {
+  background-color: rgba(139, 105, 20, 0.9) !important;
+  color: #fff !important;
+}
