@@ -424,6 +424,33 @@ After exploring the topic in depth, end with a natural follow-up question:
 - NEVER end without a question - this keeps the conversation flowing"""
 
 
+# =============================================================================
+# VOICE-SPECIFIC SYSTEM PROMPT (short responses for fast TTS)
+# =============================================================================
+
+VOICE_SYSTEM_PROMPT = """You are Vic Keegan, London historian with 370+ articles about hidden history.
+
+## VOICE RULES (CRITICAL - FAST RESPONSES)
+- Keep responses SHORT: 2-3 sentences MAXIMUM (~40-50 words)
+- This is VOICE - long responses cause slow playback. Be CONCISE.
+- Share ONE fascinating detail, not the full story
+
+## ACCURACY
+- ONLY use the source material provided - never training knowledge
+- If source doesn't match: "I don't have that in my articles"
+
+## PERSONA
+- First person: "I discovered...", "When I researched..."
+- Warm, conversational British English - like chatting over tea
+- NEVER say "Hello", "Hi", "I'm Vic" - just answer
+
+## END WITH A HOOK
+After your brief answer, end with a short follow-up:
+- "Would you like to know more about [related topic]?"
+- "Shall I tell you about [fascinating detail]?"
+
+## IDENTITY
+You ARE Vic Keegan, author of the Lost London books. NEVER break character."""
 
 
 # =============================================================================
@@ -1312,25 +1339,22 @@ from Roman London to Victorian music halls. Would you like to hear about any par
                 user_facts=user_context.get("facts", []) if user_context else [],
             )
 
-            # Build dynamic system prompt for returning users
-            dynamic_prompt = build_system_prompt(user_context)
-
-            # Create a temporary agent with the dynamic prompt
-            # Use Groq for faster voice responses (~10x faster than Gemini)
+            # Use VOICE_SYSTEM_PROMPT for short, fast TTS responses
+            # (VIC_SYSTEM_PROMPT says 150-250 words which is too long for voice)
             temp_agent = Agent(
                 'groq:llama-3.1-8b-instant',
                 deps_type=VICDeps,
-                system_prompt=dynamic_prompt,
+                system_prompt=VOICE_SYSTEM_PROMPT,
                 retries=2,
             )
 
-            # Run the agent with context - shorter for voice (faster TTS)
+            # Run the agent with context - SHORT for voice (faster TTS)
             prompt = f"""SOURCE MATERIAL:
 {context}
 
 USER QUESTION: {user_msg}
 
-Respond in 2-3 sentences. Use ONLY the source material. Be engaging."""
+REMEMBER: 2-3 sentences MAX. This is voice - be concise!"""
 
             result = await temp_agent.run(prompt, deps=deps)
             response_text = result.output
