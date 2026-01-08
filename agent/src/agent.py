@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import StreamingResponse
 
 from pydantic_ai import Agent, RunContext
+from pydantic_ai.settings import ModelSettings
 from pydantic_ai.messages import ModelMessage
 
 # Zep memory integration
@@ -1347,7 +1348,7 @@ from Roman London to Victorian music halls. Would you like to hear about any par
                 deps_type=VICDeps,
                 system_prompt=VOICE_SYSTEM_PROMPT,
                 retries=2,
-                model_settings={'max_tokens': 120, 'temperature': 0.7},
+                model_settings=ModelSettings(max_tokens=120, temperature=0.7),
             )
 
             # Run the agent with context - SHORT for voice (faster TTS)
