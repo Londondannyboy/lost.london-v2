@@ -23,7 +23,7 @@ export function BookStrip() {
 
   return (
     <div
-      className={`fixed bottom-0 left-0 bg-amber-900 text-white py-3 z-30 transition-transform duration-300 ${
+      className={`fixed bottom-0 left-0 bg-amber-900 text-white py-3 z-30 transition-transform duration-300 hidden md:block ${
         isVisible ? 'translate-y-0' : 'translate-y-full'
       }`}
       style={{ right: '420px' }} // Leave space for CopilotSidebar (400px + padding)

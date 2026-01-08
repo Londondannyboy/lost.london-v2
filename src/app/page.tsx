@@ -687,16 +687,15 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
           <div className="absolute inset-0 bg-gradient-to-b from-[#1a1612]/70 via-[#1a1612]/40 to-[#1a1612]/90" />
         </div>
 
-        <div className="relative z-10 max-w-4xl mx-auto px-4 py-16 text-center">
-          <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-4 text-[#f4ead5]">
+        <div className="relative z-10 max-w-4xl mx-auto px-4 py-8 md:py-16 text-center">
+          {/* Clean title - Vic Keegan's Lost London */}
+          <h1 className="text-4xl sm:text-5xl md:text-7xl font-bold tracking-tight mb-4 md:mb-6 text-[#f4ead5]">
+            <span className="block text-base sm:text-lg md:text-2xl font-normal text-[#d4c4a8] mb-1 md:mb-2">Vic Keegan&apos;s</span>
             Lost London
           </h1>
-          <p className="text-xl md:text-2xl text-[#d4c4a8] mb-10 max-w-2xl mx-auto">
-            AI-powered voice guide to 2,000 years of hidden history
-          </p>
 
-          {/* VIC Avatar + Voice - Avatar IS the clickable voice trigger */}
-          <div className="flex flex-col items-center mb-8">
+          {/* VIC Avatar + Voice - BIGGER on mobile */}
+          <div className="flex flex-col items-center mb-4 md:mb-8 transform scale-125 md:scale-100 my-8 md:my-0">
             <VoiceInput
               onMessage={handleVoiceMessage}
               userId={user?.id}
@@ -706,20 +705,25 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
             />
           </div>
 
-          {/* Topic Pills - White text */}
-          <div className="w-full max-w-lg mx-auto">
-            <p className="text-white/70 text-sm mb-3">Quick topics:</p>
-            <div className="flex flex-wrap justify-center gap-3">
-              {['Thorney Island', 'Royal Aquarium', 'Victorian Era', 'Hidden Rivers', 'Roman London'].map((topic) => (
+          {/* Quick Topics - 3 on mobile, no label, clean */}
+          <div className="w-full max-w-md mx-auto mt-4">
+            <div className="flex flex-wrap justify-center gap-2 md:gap-3">
+              {['Thorney Island', 'Royal Aquarium', 'Victorian Era'].map((topic) => (
                 <TopicButton key={topic} topic={topic} onClick={handleTopicClick} />
               ))}
+              {/* Extra topics on desktop only */}
+              <div className="hidden md:contents">
+                {['Hidden Rivers', 'Roman London'].map((topic) => (
+                  <TopicButton key={topic} topic={topic} onClick={handleTopicClick} />
+                ))}
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Stats */}
-      <section className="border-y border-gray-200 bg-gray-50">
+      {/* Stats - hidden on mobile for cleaner look */}
+      <section className="hidden md:block border-y border-gray-200 bg-gray-50">
         <div className="max-w-4xl mx-auto px-4 py-6">
           <div className="grid grid-cols-3 gap-4 text-center">
             <div>
@@ -738,8 +742,8 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
         </div>
       </section>
 
-      {/* About */}
-      <section className="py-12">
+      {/* About - hidden on mobile */}
+      <section className="hidden md:block py-12">
         <div className="max-w-2xl mx-auto px-4 text-center">
           <p className="text-gray-600 text-sm">
             372 articles by Vic Keegan. Original content from{' '}
