@@ -102,7 +102,7 @@ RULES:
         console.log('[VIC Session] ================================');
 
         // Connect with sessionSettings (matches lost.london-app pattern exactly)
-        // Increase inactivity timeout to 60 seconds (default is 10s)
+        // Note: Inactivity timeout is configured in Hume dashboard (config settings)
         await connect({
           auth: { type: 'accessToken' as const, value: accessToken },
           configId: configId,
@@ -111,8 +111,6 @@ RULES:
             systemPrompt,
             customSessionId: sessionIdWithName,
           },
-          // Increase timeouts for better UX
-          reconnectAttempts: 3,
         });
 
         console.log('[VIC Session] Connected successfully');
