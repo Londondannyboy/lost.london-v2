@@ -1362,6 +1362,22 @@ REMEMBER: 2-3 sentences MAX. This is voice - be concise!"""
             result = await temp_agent.run(prompt, deps=deps)
             response_text = result.output
 
+            # VOICE: Truncate long responses for fast TTS (~80 words max)
+            # Keep first 2-3 sentences + add follow-up question if truncated
+            words = response_text.split()
+            if len(words) > 100:
+                # Find sentence boundary near 80 words
+                truncated = ' '.join(words[:80])
+                # Find last complete sentence
+                last_period = max(truncated.rfind('.'), truncated.rfind('!'), truncated.rfind('?'))
+                if last_period > 50:
+                    truncated = truncated[:last_period + 1]
+                # Add follow-up if we truncated
+                if '?' not in truncated[-30:]:
+                    truncated += " Would you like to know more?"
+                response_text = truncated
+                print(f"[VIC CLM] Truncated response from {len(words)} to ~80 words for voice", file=sys.stderr)
+
             # Store conversation to Zep memory (async, don't await)
             if user_id and len(user_msg) > 5:
                 # Store user message
