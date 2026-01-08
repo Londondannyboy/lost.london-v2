@@ -1054,6 +1054,18 @@ async def startup_event():
     await load_keyword_cache()
 
 
+@app.get("/debug/cache-status")
+async def cache_status():
+    """Debug endpoint to check cache status."""
+    return {
+        "version": "2026-01-08-two-stage-v1",
+        "cache_loaded": _cache_loaded,
+        "keywords_count": len(_keyword_cache),
+        "sample_keywords": list(_keyword_cache.keys())[:10] if _keyword_cache else [],
+        "background_results_count": len(_background_results),
+    }
+
+
 # =============================================================================
 # CLM ENDPOINT FOR HUME EVI (OpenAI-compatible SSE)
 # =============================================================================
