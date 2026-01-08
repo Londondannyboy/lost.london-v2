@@ -28,10 +28,14 @@ export function Header() {
     <header className="sticky top-0 z-50 bg-stone-900 text-white">
       <div className="max-w-7xl mx-auto px-4">
         <div className="flex items-center justify-between h-14">
-          {/* Logo with book icon */}
+          {/* Logo - Vic Keegan's Lost London */}
           <Link href="/" className="flex items-center gap-2 group">
-            <BookIcon className="w-6 h-6 text-amber-500 group-hover:text-amber-400 transition-colors" />
-            <span className="text-xl font-serif font-bold">Lost London</span>
+            {/* Book icon only on desktop */}
+            <BookIcon className="hidden md:block w-6 h-6 text-amber-500 group-hover:text-amber-400 transition-colors" />
+            <span className="text-lg md:text-xl font-serif font-bold">
+              <span className="text-amber-400 font-normal text-sm md:text-base">Vic Keegan&apos;s</span>{' '}
+              Lost London
+            </span>
           </Link>
 
           {/* Right side - Auth buttons ALWAYS visible */}

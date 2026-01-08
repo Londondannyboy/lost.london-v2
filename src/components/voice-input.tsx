@@ -132,11 +132,11 @@ RULES:
 
   return (
     <div className="flex flex-col items-center gap-2 relative z-50">
-      {/* VIC Avatar - clickable to start voice */}
+      {/* VIC Avatar - BIGGER on mobile, clickable to start voice */}
       <button
         onClick={handleToggle}
         disabled={isPending}
-        className={`relative z-50 w-36 h-36 md:w-44 md:h-44 rounded-full overflow-hidden transition-all cursor-pointer ${
+        className={`relative z-50 w-48 h-48 md:w-44 md:h-44 rounded-full overflow-hidden transition-all cursor-pointer ${
           isConnected
             ? isPlaying
               ? "ring-4 ring-amber-400 animate-pulse shadow-[0_0_30px_rgba(251,191,36,0.5)]"
@@ -189,21 +189,17 @@ RULES:
         )}
       </button>
 
-      {/* VIC name badge */}
+      {/* VIC name badge - consistent on both mobile and desktop */}
       <div className="bg-[#f4ead5] text-[#2a231a] text-sm px-4 py-1.5 rounded-full font-semibold shadow-lg -mt-4">
         VIC
       </div>
 
-      {/* Status text */}
-      <span className={`text-sm font-medium mt-1 ${isConnected ? 'text-white' : 'text-[#d4c4a8]'}`}>
-        {isPending
-          ? "Connecting..."
-          : isConnected
-          ? isPlaying
-            ? "VIC is speaking..."
-            : "Listening..."
-          : "Tap to speak with VIC"}
-      </span>
+      {/* Status text when connected - shows listening/speaking state */}
+      {isConnected && (
+        <span className={`text-sm font-medium mt-2 ${isPlaying ? 'text-amber-300' : 'text-green-300'}`}>
+          {isPlaying ? "VIC is speaking..." : "Listening..."}
+        </span>
+      )}
     </div>
   );
 }
