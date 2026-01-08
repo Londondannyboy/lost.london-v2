@@ -1,6 +1,6 @@
 "use client";
 
-import { CopilotSidebar, CopilotKitCSSProperties } from "@copilotkit/react-ui";
+import { CopilotSidebar, CopilotPopup, CopilotKitCSSProperties } from "@copilotkit/react-ui";
 import { useRenderToolCall, useCopilotChat, useCoAgent } from "@copilotkit/react-core";
 import { Role, TextMessage } from "@copilotkit/runtime-client-gql";
 import { VoiceInput } from "@/components/voice-input";
@@ -660,99 +660,120 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
     "--copilot-kit-separator-color": "rgba(139, 105, 20, 0.2)",
   };
 
+  // Shared props for both Sidebar and Popup
+  const copilotProps = {
+    instructions,
+    labels: {
+      title: "London Librarian",
+      initial: initialMessage,
+    },
+    UserMessage: CustomUserMessage,
+    AssistantMessage: SmartAssistantMessage,
+  };
+
+  // Main content component - reused for both mobile and desktop
+  const MainContent = (
+    <div className="bg-white text-black min-h-screen">
+      {/* Hero Section - Full Screen */}
+      <section className="relative min-h-screen flex items-center justify-center bg-[#1a1612]">
+        {/* Background - Dynamic or default map */}
+        <div className="absolute inset-0 z-0">
+          <img
+            src={topicBackground || "/London Map with River.jpg"}
+            alt=""
+            className="w-full h-full object-cover transition-all duration-1000"
+            style={{ opacity: topicBackground ? 0.5 : 0.4, filter: 'sepia(30%) contrast(1.1)' }}
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#1a1612]/70 via-[#1a1612]/40 to-[#1a1612]/90" />
+        </div>
+
+        <div className="relative z-10 max-w-4xl mx-auto px-4 py-16 text-center">
+          <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-4 text-[#f4ead5]">
+            Lost London
+          </h1>
+          <p className="text-xl md:text-2xl text-[#d4c4a8] mb-10 max-w-2xl mx-auto">
+            AI-powered voice guide to 2,000 years of hidden history
+          </p>
+
+          {/* VIC Avatar + Voice - Avatar IS the clickable voice trigger */}
+          <div className="flex flex-col items-center mb-8">
+            <VoiceInput
+              onMessage={handleVoiceMessage}
+              userId={user?.id}
+              userName={userProfile.preferred_name || user?.name?.split(' ')[0] || user?.name}
+              isReturningUser={userProfile.isReturningUser}
+              userFacts={userProfile.facts}
+            />
+          </div>
+
+          {/* Topic Pills - White text */}
+          <div className="w-full max-w-lg mx-auto">
+            <p className="text-white/70 text-sm mb-3">Quick topics:</p>
+            <div className="flex flex-wrap justify-center gap-3">
+              {['Thorney Island', 'Royal Aquarium', 'Victorian Era', 'Hidden Rivers', 'Roman London'].map((topic) => (
+                <TopicButton key={topic} topic={topic} onClick={handleTopicClick} />
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Stats */}
+      <section className="border-y border-gray-200 bg-gray-50">
+        <div className="max-w-4xl mx-auto px-4 py-6">
+          <div className="grid grid-cols-3 gap-4 text-center">
+            <div>
+              <p className="text-2xl font-bold">372</p>
+              <p className="text-xs text-gray-500">Articles</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold">2,000</p>
+              <p className="text-xs text-gray-500">Years</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold">56</p>
+              <p className="text-xs text-gray-500">Chapters</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* About */}
+      <section className="py-12">
+        <div className="max-w-2xl mx-auto px-4 text-center">
+          <p className="text-gray-600 text-sm">
+            372 articles by Vic Keegan. Original content from{' '}
+            <a href="https://www.londonmylondon.co.uk" className="underline">londonmylondon.co.uk</a>
+          </p>
+        </div>
+      </section>
+    </div>
+  );
+
   return (
     <BackgroundContext.Provider value={backgroundContextValue}>
     <ChatUserContext.Provider value={chatUserContextValue}>
       <div style={copilotStyles}>
-      <CopilotSidebar
-        defaultOpen={!isMobile}
-        clickOutsideToClose={false}
-        instructions={instructions}
-        labels={{
-          title: "London Librarian",
-          initial: initialMessage,
-        }}
-        className="border-l border-stone-200"
-        UserMessage={CustomUserMessage}
-        AssistantMessage={SmartAssistantMessage}
-      >
-      {/* Main Content - Voice-First Hero */}
-      <div className="bg-white text-black min-h-screen">
-        {/* Hero Section - Full Screen */}
-        <section className="relative min-h-screen flex items-center justify-center bg-[#1a1612]">
-          {/* Background - Dynamic or default map */}
-          <div className="absolute inset-0 z-0">
-            <img
-              src={topicBackground || "/London Map with River.jpg"}
-              alt=""
-              className="w-full h-full object-cover transition-all duration-1000"
-              style={{ opacity: topicBackground ? 0.5 : 0.4, filter: 'sepia(30%) contrast(1.1)' }}
+        {isMobile ? (
+          // Mobile: Floating popup button in corner, main content visible
+          <>
+            {MainContent}
+            <CopilotPopup
+              {...copilotProps}
+              className="copilotkit-popup-mobile"
             />
-            <div className="absolute inset-0 bg-gradient-to-b from-[#1a1612]/70 via-[#1a1612]/40 to-[#1a1612]/90" />
-          </div>
-
-          <div className="relative z-10 max-w-4xl mx-auto px-4 py-16 text-center">
-            <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-4 text-[#f4ead5]">
-              Lost London
-            </h1>
-            <p className="text-xl md:text-2xl text-[#d4c4a8] mb-10 max-w-2xl mx-auto">
-              AI-powered voice guide to 2,000 years of hidden history
-            </p>
-
-            {/* VIC Avatar + Voice - Avatar IS the clickable voice trigger */}
-            <div className="flex flex-col items-center mb-8">
-              <VoiceInput
-                onMessage={handleVoiceMessage}
-                userId={user?.id}
-                userName={userProfile.preferred_name || user?.name?.split(' ')[0] || user?.name}
-                isReturningUser={userProfile.isReturningUser}
-                userFacts={userProfile.facts}
-              />
-            </div>
-
-            {/* Topic Pills - White text */}
-            <div className="w-full max-w-lg mx-auto">
-              <p className="text-white/70 text-sm mb-3">Quick topics:</p>
-              <div className="flex flex-wrap justify-center gap-3">
-                {['Thorney Island', 'Royal Aquarium', 'Victorian Era', 'Hidden Rivers', 'Roman London'].map((topic) => (
-                  <TopicButton key={topic} topic={topic} onClick={handleTopicClick} />
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Stats */}
-        <section className="border-y border-gray-200 bg-gray-50">
-          <div className="max-w-4xl mx-auto px-4 py-6">
-            <div className="grid grid-cols-3 gap-4 text-center">
-              <div>
-                <p className="text-2xl font-bold">372</p>
-                <p className="text-xs text-gray-500">Articles</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold">2,000</p>
-                <p className="text-xs text-gray-500">Years</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold">56</p>
-                <p className="text-xs text-gray-500">Chapters</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* About */}
-        <section className="py-12">
-          <div className="max-w-2xl mx-auto px-4 text-center">
-            <p className="text-gray-600 text-sm">
-              372 articles by Vic Keegan. Original content from{' '}
-              <a href="https://www.londonmylondon.co.uk" className="underline">londonmylondon.co.uk</a>
-            </p>
-          </div>
-        </section>
-      </div>
-      </CopilotSidebar>
+          </>
+        ) : (
+          // Desktop: Sidebar layout
+          <CopilotSidebar
+            {...copilotProps}
+            defaultOpen={true}
+            clickOutsideToClose={false}
+            className="border-l border-stone-200"
+          >
+            {MainContent}
+          </CopilotSidebar>
+        )}
       </div>
     </ChatUserContext.Provider>
     </BackgroundContext.Provider>
