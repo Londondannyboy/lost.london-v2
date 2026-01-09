@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { authClient } from '@/lib/auth/client';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { InterestGraph } from '@/components/InterestGraph';
+import { InterestGraph3D } from '@/components/InterestGraph3D';
 
 interface ZepFact {
   fact?: string;
@@ -102,6 +102,38 @@ export default function DashboardPage() {
     }
   };
 
+  const handleClearHistory = async () => {
+    if (!session?.user?.id) return;
+
+    const confirmed = window.confirm(
+      'This will clear all your conversation history and interests stored in Zep. VIC will forget your preferences. Are you sure?'
+    );
+
+    if (!confirmed) return;
+
+    try {
+      // Call the backend to clear Zep memory
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_AGENT_URL || 'https://vic-agent-production.up.railway.app'}/debug/zep/${session.user.id}`,
+        { method: 'DELETE' }
+      );
+
+      if (res.ok) {
+        // Clear local state
+        setZepFacts([]);
+        setInterests([]);
+        setInterestsWithCounts([]);
+
+        alert('History cleared! VIC will start fresh with you.');
+      } else {
+        alert('Failed to clear history. Please try again.');
+      }
+    } catch (error) {
+      console.error('Failed to clear history:', error);
+      alert('Failed to clear history. Please try again.');
+    }
+  };
+
   const formatFactDate = (fact: string) => {
     // Extract any date-like patterns from the fact
     return 'Recently';
@@ -163,11 +195,13 @@ export default function DashboardPage() {
           </div>
         ) : (
           <>
-            {/* Interest Graph */}
-            {interestsWithCounts.length > 0 && (
-              <InterestGraph
+            {/* Interest Graph - 3D Force Graph */}
+            {(interestsWithCounts.length > 0 || zepFacts.length > 0) && (
+              <InterestGraph3D
                 interests={interestsWithCounts}
+                facts={zepFacts}
                 userName={profile?.preferred_name || session?.user?.name?.split(' ')[0]}
+                onClearHistory={handleClearHistory}
               />
             )}
 
