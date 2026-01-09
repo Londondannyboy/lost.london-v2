@@ -7,7 +7,7 @@
 | **Repository** | `/Users/dankeegan/lost-london-v2` |
 | **GitHub** | https://github.com/Londondannyboy/lost.london-v2 |
 | **Frontend** | https://lost-london-v2-copilot.vercel.app (Vercel) |
-| **Backend** | https://lost-london-v2-production.up.railway.app (Railway) |
+| **Backend** | https://vic-agent-production.up.railway.app (Railway) |
 | **Database** | Neon PostgreSQL (372 articles, 371 images) |
 | **Latest Plan** | `RESTART_PLAN_JAN_2026.md` |
 
@@ -26,20 +26,23 @@ uvicorn src.agent:app --reload --port 8000
 
 ---
 
-## Architecture (Jan 2026)
+## Architecture (Jan 2026) - Two-Stage Voice
 
 ```
-User speaks → Hume EVI → /chat/completions (CLM) → Groq → VIC response
+STAGE 1: INSTANT (<0.7s)
+User speaks → Hume EVI → /chat/completions → Keyword Cache Lookup (10ms) → Fast LLM (Groq 8b, 200ms) → Teaser Response
                                                       ↓
-                                              delegate_to_librarian tool
-                                                      ↓
-                                              search_articles() direct call
-                                                      ↓
-                                              Returns: articles, hero_image,
-                                              timeline_events, location
+                                              asyncio.create_task() → background loading
+
+STAGE 2: BACKGROUND (while user listens)
+Full RRF search → Load articles → Zep memory → Detailed response ready for "yes"
 ```
 
-**Key Change:** Librarian is no longer a separate agent. `delegate_to_librarian` now directly calls search functions for faster, more reliable results.
+**Key Features:**
+- 4,748 unique keywords from 372 articles loaded in memory at startup
+- Instant teaser: "Ah, the Royal Aquarium in Westminster - shall I tell you more?"
+- When user says "yes" → response is already loaded, instant playback
+- Response time: **<0.7 seconds** (was 6+ seconds)
 
 ---
 

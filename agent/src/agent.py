@@ -958,9 +958,14 @@ async def load_keyword_cache():
                     "image_url": row['featured_image_url'],
                     "slug": row['slug'],
                 }
+                title_lower = row['title'].lower()
                 # Map each keyword to this article's teaser
+                # Prioritize articles where keyword appears in title (more relevant)
                 for keyword in (row['topic_keywords'] or []):
-                    _keyword_cache[keyword.lower()] = teaser_data
+                    kw_lower = keyword.lower()
+                    # Only set if: not in cache yet, OR this article has keyword in title
+                    if kw_lower not in _keyword_cache or kw_lower in title_lower:
+                        _keyword_cache[kw_lower] = teaser_data
 
             _cache_loaded = True
             logger.info(f"[VIC Cache] Loaded {len(_keyword_cache)} keywords from {len(results)} articles")
@@ -1337,14 +1342,31 @@ async def clm_endpoint(request: Request):
         # CACHE the results for all future messages in this session
         cache_user_context(session_id or "default", user_name, user_context)
 
-    # Log final name resolution
+    # Log final name resolution and add comprehensive debug info
     _last_request_debug["user_name_resolved"] = user_name
     _last_request_debug["user_id"] = user_id
+    _last_request_debug["was_cached"] = was_cached
+    _last_request_debug["zep_context"] = {
+        "is_returning": user_context.get("is_returning", False) if user_context else False,
+        "facts": user_context.get("facts", []) if user_context else [],
+        "user_name_from_zep": user_context.get("user_name") if user_context else None,
+    }
     print(f"[VIC CLM] Final user_name: {user_name}, user_id: {user_id}, cached: {was_cached}", file=sys.stderr)
 
     # Normalize query with phonetic corrections
     normalized_query = normalize_query(user_msg)
     print(f"[VIC CLM] Query: '{user_msg}' -> '{normalized_query}'", file=sys.stderr)
+
+    # ==========================================================================
+    # EMPTY/NOISE FILTER - Don't respond to silence or noise from Hume
+    # ==========================================================================
+    if len(normalized_query.strip()) < 2:
+        logger.info(f"[VIC CLM] Ignoring empty/noise message: '{user_msg}'")
+        # Return empty response - don't generate random content
+        return StreamingResponse(
+            stream_sse_response("", str(uuid.uuid4())),
+            media_type="text/event-stream"
+        )
 
     # Easter egg check
     if "rosie" in normalized_query.lower():
@@ -1456,14 +1478,22 @@ from Roman London to Victorian music halls. Would you like to hear about any par
         any(phrase in normalized_lower for phrase in AFFIRMATION_PHRASES)
     )
 
+    # Flag to skip Stage 1 teaser and go directly to full response
+    skip_to_full_response = False
+
     if is_affirmation:
-        last_suggestion = get_last_suggestion(session_id or "default")
+        affirmation_key = session_id or "default"
+        last_suggestion = get_last_suggestion(affirmation_key)
+        logger.info(f"[VIC CLM] Affirmation detected: '{normalized_lower}', session='{affirmation_key}', last_suggestion='{last_suggestion}'")
         if last_suggestion:
-            print(f"[VIC CLM] ⚡ Affirmation '{normalized_lower}' -> using last suggestion: '{last_suggestion}'", file=sys.stderr)
+            logger.info(f"[VIC CLM] ⚡ 'Yes' to '{last_suggestion}' - skipping teaser, going to full response")
             # Replace query with the suggested topic
             normalized_query = last_suggestion
+            # CRITICAL: Skip Stage 1 teaser - user already heard it, they want the FULL story now!
+            skip_to_full_response = True
         else:
             # No suggestion stored - ask what they want
+            logger.warning(f"[VIC CLM] No last_suggestion found for session='{affirmation_key}'")
             response_text = "What would you like to hear about? I've got fascinating stories about Thorney Island, the Royal Aquarium, London's hidden rivers, and much more."
             return StreamingResponse(
                 stream_sse_response(response_text, str(uuid.uuid4())),
@@ -1475,15 +1505,28 @@ from Roman London to Victorian music halls. Would you like to hear about any par
 
     # ==========================================================================
     # STAGE 1: FAST PATH - Keyword cache lookup for instant response (<300ms)
+    # SKIP this if user said "yes" - they want the FULL story, not another teaser!
     # ==========================================================================
-    teaser = get_teaser_from_cache(normalized_query)
-    session_key = session_id or f"anon_{uuid.uuid4()}"
+    # IMPORTANT: Use consistent session key - "default" for anonymous users
+    # This ensures "yes" handling can find the last suggestion
+    session_key = session_id or "default"
+
+    # Only do teaser if NOT an affirmation (user saying "yes" wants full story)
+    teaser = None if skip_to_full_response else get_teaser_from_cache(normalized_query)
 
     if teaser:
         logger.info(f"[VIC Stage1] FAST MATCH: '{teaser['title']}' for query '{normalized_query}'")
+        _last_request_debug["stage"] = "Stage1-Teaser"
+        _last_request_debug["teaser_match"] = {
+            "title": teaser['title'],
+            "location": teaser.get('location'),
+            "era": teaser.get('era'),
+            "hook": teaser.get('hook'),
+        }
 
-        # Store suggestion for "yes" handling
+        # Store suggestion for "yes" handling - uses same key as get_last_suggestion
         set_last_suggestion(session_key, teaser['title'])
+        logger.info(f"[VIC Stage1] Stored last_suggestion='{teaser['title']}' for session='{session_key}'")
 
         # Kick off background loading (don't await - runs while user listens)
         import asyncio
@@ -1493,6 +1536,12 @@ from Roman London to Victorian music halls. Would you like to hear about any par
         response_text = await generate_fast_teaser(teaser, user_msg)
 
         logger.info(f"[VIC Stage1] Teaser response: {response_text[:80]}...")
+        _last_request_debug["response"] = response_text
+        _last_request_debug["session_key"] = session_key
+        # Store in history
+        _debug_history.append(dict(_last_request_debug))
+        if len(_debug_history) > 10:
+            _debug_history.pop(0)
 
         return StreamingResponse(
             stream_sse_response(response_text, str(uuid.uuid4())),
@@ -1503,6 +1552,8 @@ from Roman London to Victorian music halls. Would you like to hear about any par
     # STAGE 2: FULL SEARCH - No keyword match, do complete RRF search
     # ==========================================================================
     logger.info(f"[VIC Stage2] No cache match, doing full search for: {normalized_query}")
+    _last_request_debug["stage"] = "Stage2-FullSearch"
+    _last_request_debug["teaser_match"] = None
 
     # Check if we have pre-loaded content from a previous "yes" response
     if session_key in _background_results and _background_results[session_key].get("ready"):
@@ -1513,10 +1564,11 @@ from Roman London to Victorian music halls. Would you like to hear about any par
         del _background_results[session_key]  # Clear after use
 
         # Generate detailed response with pre-loaded content
+        # Keep it SHORT for voice - 2-3 sentences max
         detailed_agent = Agent(
             'groq:llama-3.3-70b-versatile',
             system_prompt=VOICE_SYSTEM_PROMPT,
-            model_settings=ModelSettings(max_tokens=200, temperature=0.7),
+            model_settings=ModelSettings(max_tokens=120, temperature=0.7),
         )
 
         prompt = f"""SOURCE MATERIAL:
@@ -1524,10 +1576,23 @@ from Roman London to Victorian music halls. Would you like to hear about any par
 
 USER QUESTION: {user_msg}
 
-Give a detailed but concise response (3-4 sentences). End with a follow-up question."""
+CRITICAL: Keep response to 2-3 sentences MAX (~50 words). Share ONE interesting fact, then stop.
+End with a brief question like "Would you like to know more about [specific aspect]?" """
 
         result = await detailed_agent.run(prompt)
         response_text = result.output
+
+        # Truncate if still too long (voice needs fast playback)
+        words = response_text.split()
+        if len(words) > 80:
+            truncated = ' '.join(words[:70])
+            last_period = max(truncated.rfind('.'), truncated.rfind('!'), truncated.rfind('?'))
+            if last_period > 40:
+                truncated = truncated[:last_period + 1]
+            if '?' not in truncated[-30:]:
+                truncated += " Shall I tell you more?"
+            response_text = truncated
+            logger.info(f"[VIC Stage2] Truncated 'yes' response from {len(words)} to ~70 words")
 
         return StreamingResponse(
             stream_sse_response(response_text, str(uuid.uuid4())),
@@ -2032,7 +2097,43 @@ In this chat, keep it SHORT:
                     "georgian": [
                         {"year": 1714, "title": "George I", "description": "House of Hanover begins"},
                         {"year": 1750, "title": "Westminster Bridge", "description": "Second Thames crossing opens"},
+                        {"year": 1760, "title": "George III", "description": "Longest-reigning Georgian monarch"},
                         {"year": 1830, "title": "End of Era", "description": "Death of George IV"},
+                    ],
+                    "tudor": [
+                        {"year": 1485, "title": "Tudor Dynasty Begins", "description": "Henry VII crowned after Battle of Bosworth"},
+                        {"year": 1509, "title": "Henry VIII", "description": "The famous Tudor king ascends"},
+                        {"year": 1534, "title": "Break from Rome", "description": "Church of England established"},
+                        {"year": 1558, "title": "Elizabeth I", "description": "The Virgin Queen's reign begins"},
+                        {"year": 1603, "title": "End of Tudor Era", "description": "Death of Elizabeth I"},
+                    ],
+                    "elizabethan": [
+                        {"year": 1558, "title": "Elizabeth I Crowned", "description": "Beginning of the Elizabethan Age"},
+                        {"year": 1576, "title": "The Theatre", "description": "First purpose-built playhouse"},
+                        {"year": 1588, "title": "Spanish Armada Defeated", "description": "England's naval triumph"},
+                        {"year": 1599, "title": "Globe Theatre Opens", "description": "Shakespeare's famous playhouse"},
+                        {"year": 1603, "title": "End of Era", "description": "Death of Elizabeth I"},
+                    ],
+                    "medieval": [
+                        {"year": 1066, "title": "Norman Conquest", "description": "William the Conqueror takes London"},
+                        {"year": 1078, "title": "Tower of London", "description": "White Tower construction begins"},
+                        {"year": 1176, "title": "London Bridge", "description": "Stone bridge construction begins"},
+                        {"year": 1348, "title": "Black Death", "description": "Plague devastates London"},
+                        {"year": 1381, "title": "Peasants' Revolt", "description": "Uprising reaches London"},
+                    ],
+                    "roman": [
+                        {"year": 43, "title": "Roman Conquest", "description": "Londinium founded by Romans"},
+                        {"year": 60, "title": "Boudica's Revolt", "description": "City destroyed by Iceni queen"},
+                        {"year": 120, "title": "London Wall", "description": "Defensive walls constructed"},
+                        {"year": 200, "title": "Roman London at Peak", "description": "Population reaches 30,000"},
+                        {"year": 410, "title": "Romans Leave", "description": "End of Roman Britain"},
+                    ],
+                    "stuart": [
+                        {"year": 1603, "title": "James I", "description": "First Stuart monarch"},
+                        {"year": 1605, "title": "Gunpowder Plot", "description": "Failed assassination attempt"},
+                        {"year": 1665, "title": "Great Plague", "description": "Last major plague outbreak"},
+                        {"year": 1666, "title": "Great Fire", "description": "Fire destroys much of London"},
+                        {"year": 1714, "title": "End of Stuart Era", "description": "Queen Anne dies"},
                     ],
                 }
                 for key, events in TIMELINES.items():
@@ -2091,7 +2192,7 @@ else:
 async def health():
     """Health check endpoint."""
     logger.info("Health endpoint called!")
-    return {"status": "ok", "agent": "VIC - Lost London", "deployed": "2026-01-07-22:33-session-cache"}
+    return {"status": "ok", "agent": "VIC - Lost London", "deployed": "2026-01-09-silence-filter"}
 
 
 @app.get("/health")
@@ -2100,11 +2201,92 @@ async def health_check():
     return {"status": "healthy"}
 
 
-# Store last request for debugging
+# Store comprehensive debug info for last request
 _last_request_debug: dict = {"status": "no requests yet"}
+_debug_history: list = []  # Store last 10 requests for scrollback
 
 
 @app.get("/debug/last-request")
 async def debug_last_request():
     """Return the last request received for debugging."""
     return _last_request_debug
+
+
+@app.get("/debug/full")
+async def debug_full():
+    """
+    COMPREHENSIVE DEBUG ENDPOINT
+    Returns everything the LLM is using: prompt, teaser, Zep context, session state, etc.
+    """
+    # Get session contexts (sanitized)
+    session_states = {}
+    for session_id, ctx in list(_session_contexts.items())[-5:]:  # Last 5 sessions
+        session_states[session_id] = {
+            "turns_since_name_used": ctx.turns_since_name_used,
+            "greeted_this_session": ctx.greeted_this_session,
+            "last_topic": ctx.last_topic,
+            "user_name": ctx.user_name,
+            "context_fetched": ctx.context_fetched,
+            "prefetched_topic": ctx.prefetched_topic,
+            "last_suggested_topic": ctx.last_suggested_topic,
+            "suggestions": ctx.suggestions,
+            "zep_facts": ctx.user_context.get("facts", []) if ctx.user_context else [],
+            "is_returning": ctx.user_context.get("is_returning", False) if ctx.user_context else False,
+        }
+
+    # Get background results status
+    background_status = {}
+    for session_id, data in _background_results.items():
+        background_status[session_id] = {
+            "query": data.get("query"),
+            "ready": data.get("ready", False),
+            "content_length": len(data.get("content", "")) if data.get("content") else 0,
+        }
+
+    return {
+        "last_request": _last_request_debug,
+        "request_history": _debug_history[-10:],
+        "cache_status": {
+            "loaded": _cache_loaded,
+            "keywords_count": len(_keyword_cache),
+            "sample_keywords": list(_keyword_cache.keys())[:20],
+        },
+        "session_states": session_states,
+        "background_results": background_status,
+        "prompts": {
+            "voice_system_prompt": VOICE_SYSTEM_PROMPT[:500] + "..." if len(VOICE_SYSTEM_PROMPT) > 500 else VOICE_SYSTEM_PROMPT,
+            "vic_system_prompt_preview": VIC_SYSTEM_PROMPT[:300] + "...",
+        },
+    }
+
+
+@app.get("/debug/zep/{user_id}")
+async def debug_zep_user(user_id: str):
+    """Get full Zep context for a specific user."""
+    try:
+        memory = await get_user_memory(user_id)
+        return {
+            "user_id": user_id,
+            "memory": memory,
+            "found": memory.get("found", False),
+            "is_returning": memory.get("is_returning", False),
+            "facts": memory.get("facts", []),
+            "user_name": memory.get("user_name"),
+        }
+    except Exception as e:
+        return {"error": str(e), "user_id": user_id}
+
+
+@app.delete("/debug/zep/{user_id}")
+async def clear_zep_user(user_id: str):
+    """Clear Zep memory for a user (to fix contamination)."""
+    client = get_zep_client()
+    if not client:
+        return {"error": "Zep not available"}
+
+    try:
+        # Delete user from Zep - this clears all their memory
+        await client.user.delete(user_id)
+        return {"success": True, "message": f"Cleared Zep memory for user {user_id}"}
+    except Exception as e:
+        return {"error": str(e), "user_id": user_id}

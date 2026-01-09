@@ -9,7 +9,7 @@ interface LibrarianAvatarProps {
 }
 
 /**
- * LibrarianAvatar - Visual indicator when the London Librarian is "speaking"
+ * LibrarianAvatar - Visual indicator when the Rosie is "speaking"
  *
  * Displays a distinct avatar with animation when the Librarian is active.
  * Used alongside VIC's responses to clearly indicate which agent is contributing.
@@ -49,11 +49,11 @@ export function LibrarianAvatar({
           ${pulseActive ? "animate-pulse ring-2 ring-amber-400 ring-opacity-50" : ""}
           ${speaking ? "shadow-lg shadow-amber-200" : ""}
         `}
-        title="London Librarian"
+        title="Rosie"
       >
         <img
           src="/London Librarian Avatar 1.png"
-          alt="London Librarian"
+          alt="Rosie"
           className="w-full h-full object-cover"
         />
       </div>
@@ -66,7 +66,7 @@ export function LibrarianAvatar({
             ${size === "sm" ? "text-xs" : size === "md" ? "text-sm" : "text-base"}
           `}
         >
-          London Librarian
+          Rosie
         </span>
       )}
     </div>

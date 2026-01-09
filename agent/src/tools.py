@@ -213,17 +213,64 @@ def extract_location_from_content(content: str, title: str) -> Optional[MapLocat
 
     Uses known London landmarks and their coordinates.
     """
-    # Known London locations with coordinates
+    # Known London locations with coordinates - comprehensive list for Lost London articles
     LONDON_LOCATIONS = {
+        # Westminster area
         "royal aquarium": MapLocation(name="Royal Aquarium", lat=51.5007, lng=-0.1268, description="Site of the Royal Aquarium, Westminster"),
         "westminster": MapLocation(name="Westminster", lat=51.4995, lng=-0.1248, description="Westminster area"),
+        "westminster abbey": MapLocation(name="Westminster Abbey", lat=51.4994, lng=-0.1273, description="Westminster Abbey"),
         "thorney island": MapLocation(name="Thorney Island", lat=51.4994, lng=-0.1249, description="Ancient Thorney Island, now Westminster"),
-        "tyburn": MapLocation(name="Tyburn", lat=51.5127, lng=-0.1599, description="Site of Tyburn gallows, near Marble Arch"),
-        "crystal palace": MapLocation(name="Crystal Palace", lat=51.4225, lng=-0.0750, description="Site of the Crystal Palace"),
+        "parliament": MapLocation(name="Houses of Parliament", lat=51.4995, lng=-0.1248, description="Palace of Westminster"),
+        "whitehall": MapLocation(name="Whitehall", lat=51.5041, lng=-0.1262, description="Whitehall government area"),
+        "trafalgar square": MapLocation(name="Trafalgar Square", lat=51.5080, lng=-0.1281, description="Trafalgar Square"),
+        "st james": MapLocation(name="St James's", lat=51.5053, lng=-0.1364, description="St James's area"),
+        "pall mall": MapLocation(name="Pall Mall", lat=51.5069, lng=-0.1327, description="Pall Mall"),
+        "victoria": MapLocation(name="Victoria", lat=51.4965, lng=-0.1447, description="Victoria area"),
+
+        # City of London
+        "city of london": MapLocation(name="City of London", lat=51.5155, lng=-0.0922, description="The Square Mile"),
         "tower of london": MapLocation(name="Tower of London", lat=51.5081, lng=-0.0759, description="Tower of London"),
         "london bridge": MapLocation(name="London Bridge", lat=51.5079, lng=-0.0877, description="London Bridge"),
-        "fleet street": MapLocation(name="Fleet Street", lat=51.5138, lng=-0.1088, description="Fleet Street"),
+        "fleet street": MapLocation(name="Fleet Street", lat=51.5138, lng=-0.1088, description="Fleet Street, historic press district"),
+        "blackfriars": MapLocation(name="Blackfriars", lat=51.5118, lng=-0.1033, description="Blackfriars area"),
+        "st paul": MapLocation(name="St Paul's Cathedral", lat=51.5138, lng=-0.0984, description="St Paul's Cathedral"),
+        "old bailey": MapLocation(name="Old Bailey", lat=51.5155, lng=-0.1019, description="Central Criminal Court"),
+        "bank": MapLocation(name="Bank", lat=51.5133, lng=-0.0886, description="Bank of England area"),
+        "cheapside": MapLocation(name="Cheapside", lat=51.5145, lng=-0.0930, description="Historic Cheapside"),
+
+        # South London
         "southwark": MapLocation(name="Southwark", lat=51.5034, lng=-0.0946, description="Southwark"),
+        "lambeth": MapLocation(name="Lambeth", lat=51.4907, lng=-0.1167, description="Lambeth area"),
+        "bankside": MapLocation(name="Bankside", lat=51.5065, lng=-0.0955, description="Bankside, historic theatre district"),
+        "vauxhall": MapLocation(name="Vauxhall", lat=51.4861, lng=-0.1229, description="Vauxhall area"),
+        "crystal palace": MapLocation(name="Crystal Palace", lat=51.4225, lng=-0.0750, description="Site of the Crystal Palace"),
+
+        # East London
+        "spitalfields": MapLocation(name="Spitalfields", lat=51.5196, lng=-0.0749, description="Spitalfields market area"),
+        "whitechapel": MapLocation(name="Whitechapel", lat=51.5175, lng=-0.0659, description="Whitechapel"),
+        "shoreditch": MapLocation(name="Shoreditch", lat=51.5254, lng=-0.0794, description="Shoreditch"),
+
+        # West London
+        "tyburn": MapLocation(name="Tyburn", lat=51.5127, lng=-0.1599, description="Site of Tyburn gallows, near Marble Arch"),
+        "mayfair": MapLocation(name="Mayfair", lat=51.5107, lng=-0.1495, description="Mayfair"),
+        "hyde park": MapLocation(name="Hyde Park", lat=51.5073, lng=-0.1657, description="Hyde Park"),
+        "chelsea": MapLocation(name="Chelsea", lat=51.4875, lng=-0.1687, description="Chelsea"),
+        "kensington": MapLocation(name="Kensington", lat=51.4988, lng=-0.1749, description="Kensington"),
+        "holborn": MapLocation(name="Holborn", lat=51.5177, lng=-0.1195, description="Holborn"),
+        "covent garden": MapLocation(name="Covent Garden", lat=51.5129, lng=-0.1243, description="Covent Garden"),
+        "strand": MapLocation(name="The Strand", lat=51.5108, lng=-0.1170, description="The Strand"),
+        "somerset house": MapLocation(name="Somerset House", lat=51.5108, lng=-0.1170, description="Somerset House"),
+
+        # North London
+        "islington": MapLocation(name="Islington", lat=51.5362, lng=-0.1033, description="Islington"),
+        "kings cross": MapLocation(name="King's Cross", lat=51.5309, lng=-0.1233, description="King's Cross area"),
+        "st pancras": MapLocation(name="St Pancras", lat=51.5321, lng=-0.1266, description="St Pancras"),
+        "euston": MapLocation(name="Euston", lat=51.5282, lng=-0.1337, description="Euston area"),
+
+        # Rivers and features
+        "thames": MapLocation(name="River Thames", lat=51.5074, lng=-0.1078, description="River Thames at London"),
+        "fleet river": MapLocation(name="Fleet River", lat=51.5126, lng=-0.1044, description="Site of the buried Fleet River"),
+        "walbrook": MapLocation(name="Walbrook", lat=51.5122, lng=-0.0898, description="Site of the Roman Walbrook stream"),
     }
 
     content_lower = content.lower()

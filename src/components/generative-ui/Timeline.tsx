@@ -12,36 +12,26 @@ interface TimelineProps {
   events: TimelineEvent[];
 }
 
-export function Timeline({ era, events }: TimelineProps) {
+export function Timeline({ events }: TimelineProps) {
   return (
-    <div className="bg-white rounded-lg shadow-md overflow-hidden border border-stone-200">
-      <div className="p-4 bg-amber-50 border-b border-amber-100">
-        <h3 className="font-semibold text-lg text-stone-800">{era}</h3>
-        <p className="text-stone-600 text-sm">{events.length} key events</p>
-      </div>
-      <div className="p-4">
-        <div className="relative">
-          {/* Timeline line */}
-          <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-amber-200" />
+    <div className="relative">
+      {/* Timeline line */}
+      <div className="absolute left-3 top-2 bottom-2 w-0.5 bg-amber-300" />
 
-          {/* Events */}
-          <div className="space-y-6">
-            {events.map((event, index) => (
-              <div key={index} className="relative pl-10">
-                {/* Timeline dot */}
-                <div className="absolute left-2 w-4 h-4 bg-amber-500 rounded-full border-2 border-white shadow" />
+      {/* Events - compact display */}
+      <div className="space-y-3">
+        {events.map((event, index) => (
+          <div key={index} className="relative pl-8">
+            {/* Timeline dot */}
+            <div className="absolute left-1 top-1 w-4 h-4 bg-amber-500 rounded-full border-2 border-white shadow-sm" />
 
-                <div className="bg-stone-50 rounded-lg p-3">
-                  <div className="flex items-baseline gap-2 mb-1">
-                    <span className="text-amber-700 font-bold">{event.year}</span>
-                    <span className="font-semibold text-stone-800">{event.title}</span>
-                  </div>
-                  <p className="text-stone-600 text-sm">{event.description}</p>
-                </div>
-              </div>
-            ))}
+            <div className="flex items-baseline gap-2">
+              <span className="text-amber-700 font-bold text-sm">{event.year}</span>
+              <span className="font-medium text-stone-800 text-sm">{event.title}</span>
+            </div>
+            <p className="text-stone-600 text-xs mt-0.5">{event.description}</p>
           </div>
-        </div>
+        ))}
       </div>
     </div>
   );

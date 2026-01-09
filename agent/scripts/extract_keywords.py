@@ -49,15 +49,28 @@ CONTENT (first 800 chars):
 
 Return JSON with these fields:
 {{
-    "keywords": ["5-8 lowercase search keywords including topic name, alternate spellings, phonetic variants"],
+    "keywords": ["20-30 lowercase keywords - BE COMPREHENSIVE! Include:
+        - Topic name and ALL alternate spellings/phonetic variants
+        - All HISTORICAL FIGURES mentioned (full names AND surnames separately)
+        - All LOCATIONS (streets, areas, landmarks, neighborhoods)
+        - Related buildings/structures (past and present)
+        - Historical events mentioned
+        - Time periods/dates (decades, centuries)
+        - Architects, builders, designers mentioned
+        - Related topics for semantic linking (e.g., 'entertainment venue' for theatres)"],
     "location": "London area (Westminster, East End, City of London, Southwark, etc.) or null",
     "era": "Historical era (Victorian, Georgian, Tudor, Medieval, Roman, etc.) or null",
     "hook": "One engaging sentence about the most interesting fact (under 100 chars)"
 }}
 
-Example:
+Example for Royal Aquarium article:
 {{
-    "keywords": ["royal aquarium", "aquarium", "aquarim", "westminster", "victorian", "crystal palace"],
+    "keywords": ["royal aquarium", "aquarium", "aquarim", "aquariam", "westminster aquarium",
+                 "westminster", "tothill street", "westminster bridge", "methodist central hall",
+                 "joseph paxton", "paxton", "alfred bedborough", "bedborough", "crystal palace",
+                 "victorian", "1876", "1903", "1900s", "nineteenth century",
+                 "entertainment venue", "music hall", "exotic fish", "variety shows",
+                 "demolished buildings", "westminster landmarks"],
     "location": "Westminster",
     "era": "Victorian",
     "hook": "Built to rival Crystal Palace, lasted only 27 years"
@@ -170,7 +183,7 @@ async def main():
                     if base in kw.lower():
                         keywords.extend(variants)
 
-            keywords = list(set(keywords))[:10]  # Limit to 10 keywords
+            keywords = list(set(keywords))[:35]  # Allow up to 35 keywords for semantic richness
 
             # Update database
             await conn.execute("""

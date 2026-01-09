@@ -1,7 +1,7 @@
 "use client";
 
 import { CopilotSidebar, CopilotPopup, CopilotKitCSSProperties } from "@copilotkit/react-ui";
-import { useRenderToolCall, useCopilotChat, useCoAgent } from "@copilotkit/react-core";
+import { useRenderToolCall, useCopilotChat, useCoAgent, useCopilotContext } from "@copilotkit/react-core";
 import { Role, TextMessage } from "@copilotkit/runtime-client-gql";
 import { VoiceInput } from "@/components/voice-input";
 import { ArticleGrid } from "@/components/generative-ui/ArticleGrid";
@@ -13,6 +13,7 @@ import { TopicContext } from "@/components/generative-ui/TopicContext";
 import { TopicImage } from "@/components/generative-ui/TopicImage";
 import { LibrarianMessage, LibrarianThinking } from "@/components/LibrarianAvatar";
 import { CustomUserMessage, ChatUserContext } from "@/components/ChatMessages";
+import { DebugPanel } from "@/components/DebugPanel";
 import { useCallback, useEffect, useState } from "react";
 import { authClient } from "@/lib/auth/client";
 
@@ -61,8 +62,13 @@ function SmartAssistantMessage({ message }: { message?: { generativeUI?: () => R
   // Get generative UI from tools (Librarian's output)
   const generativeUI = message?.generativeUI?.();
 
-  // Check if generativeUI actually has content (not null, undefined, or empty)
-  const hasValidGenerativeUI = generativeUI !== null && generativeUI !== undefined;
+  // Check if generativeUI actually has renderable content
+  // Must be a valid React element, not null/undefined/empty string
+  const hasValidGenerativeUI = generativeUI !== null &&
+    generativeUI !== undefined &&
+    generativeUI !== false &&
+    // Check it's not an empty string or whitespace
+    !(typeof generativeUI === 'string' && !generativeUI.trim());
 
   // Get VIC's text content - clean it up
   const rawContent = typeof message?.content === "string" ? message.content : "";
@@ -96,16 +102,16 @@ function SmartAssistantMessage({ message }: { message?: { generativeUI?: () => R
           </div>
         )}
 
-        {/* Librarian's research results - only show if there's actual content */}
+        {/* Librarian's research results */}
         <div className="flex gap-3">
           <div className="flex-shrink-0">
             <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-amber-300">
-              <img src="/London Librarian Avatar 1.png" alt="London Librarian" className="w-full h-full object-cover" />
+              <img src="/London Librarian Avatar 1.png" alt="Rosie" className="w-full h-full object-cover" />
             </div>
           </div>
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-sm font-medium text-amber-700">London Librarian</span>
+              <span className="text-sm font-medium text-amber-700">Rosie</span>
             </div>
             <div className="bg-amber-50/50 rounded-lg rounded-tl-none p-3 text-stone-800 border-l-2 border-amber-200">
               {generativeUI}
@@ -143,17 +149,28 @@ function SmartAssistantMessage({ message }: { message?: { generativeUI?: () => R
 
 // Context for sharing background setter with render callbacks
 import { createContext, useContext } from 'react';
-const BackgroundContext = createContext<{ setBackground: (url: string | null) => void }>({ setBackground: () => {} });
+
+// Background state includes both URL and topic name for caption
+type BackgroundState = {
+  url: string | null;
+  topic: string | null;
+};
+const BackgroundContext = createContext<{
+  setBackground: (url: string | null, topic?: string) => void;
+  currentBackground: BackgroundState;
+}>({
+  setBackground: () => {},
+  currentBackground: { url: null, topic: null }
+});
 
 // Component to set background when mounted (used in render callbacks)
-function BackgroundUpdater({ imageUrl }: { imageUrl: string }) {
+function BackgroundUpdater({ imageUrl, topic }: { imageUrl: string; topic?: string }) {
   const { setBackground } = useContext(BackgroundContext);
   useEffect(() => {
     if (imageUrl) {
-      console.log('[BackgroundUpdater] Setting background to:', imageUrl);
-      setBackground(imageUrl);
+      setBackground(imageUrl, topic);
     }
-  }, [imageUrl, setBackground]);
+  }, [imageUrl, topic, setBackground]);
   return null;
 }
 
@@ -199,12 +216,28 @@ function extractTopicFromQuery(query: string): string | null {
     'thorney island', 'royal aquarium', 'tyburn', 'crystal palace',
     'london bridge', 'tower of london', 'fleet street', 'southwark',
     'westminster', 'thames', 'victorian', 'georgian', 'medieval',
+    'blackfriars', 'bankside', 'spitalfields', 'whitechapel', 'mayfair',
+    'covent garden', 'hyde park', 'chelsea', 'lambeth', 'vauxhall',
   ];
 
   for (const topic of knownTopics) {
     if (lowerQuery.includes(topic)) {
       return topic.split(' ')
         .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
+    }
+  }
+
+  // Final fallback: if query is short (1-4 words) and looks like a topic name, use it directly
+  // This handles queries like "Royal Aquarium" or "Thorney Island" said directly
+  const words = query.trim().split(/\s+/);
+  if (words.length >= 1 && words.length <= 4 && query.length >= 5 && query.length <= 50) {
+    // Exclude common non-topic phrases
+    const nonTopics = ['yes', 'no', 'hello', 'hi', 'thanks', 'thank you', 'bye', 'goodbye', 'ok', 'okay'];
+    if (!nonTopics.includes(lowerQuery)) {
+      return query.trim()
+        .split(' ')
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
         .join(' ');
     }
   }
@@ -289,8 +322,13 @@ export default function Home() {
     facts?: string[];
   }>({});
 
-  // Dynamic background based on current topic
-  const [topicBackground, setTopicBackground] = useState<string | null>(null);
+  // Dynamic background based on current topic - tracks both URL and topic name
+  const [backgroundState, setBackgroundState] = useState<BackgroundState>({ url: null, topic: null });
+
+  // Callback to set background with optional topic name
+  const setBackground = useCallback((url: string | null, topic?: string) => {
+    setBackgroundState({ url, topic: topic || null });
+  }, []);
 
   // Fetch user profile and Zep context on mount
   useEffect(() => {
@@ -498,15 +536,15 @@ export default function Home() {
       const uiComponent = result?.ui_component;
       const uiData = result?.ui_data || result;
 
-      // Debug: Log what we received
-      console.log('[Librarian UI] Result:', { uiComponent, hasUiData: !!result?.ui_data, heroImage: uiData?.hero_image });
+      // Debug disabled - was causing console spam
+      // console.log('[Rosie] Full result:', { uiComponent, query: uiData?.query });
 
       // TopicContext is rendered directly (it includes its own Librarian header)
       if (uiComponent === "TopicContext") {
         return (
           <>
             {/* Update hero background when topic has an image */}
-            {uiData?.hero_image && <BackgroundUpdater imageUrl={uiData.hero_image} />}
+            {uiData?.hero_image && <BackgroundUpdater imageUrl={uiData.hero_image} topic={uiData?.query} />}
             <TopicContext
               query={uiData?.query || ""}
               brief={uiData?.brief}
@@ -524,7 +562,7 @@ export default function Home() {
       if (uiComponent === "TopicImage" && uiData?.hero_image) {
         return (
           <>
-            <BackgroundUpdater imageUrl={uiData.hero_image} />
+            <BackgroundUpdater imageUrl={uiData.hero_image} topic={uiData?.query} />
             <LibrarianMessage brief={uiData?.brief}>
               <TopicImage
                 query={uiData?.query || ""}
@@ -570,6 +608,7 @@ export default function Home() {
 - User Email: ${user.email || 'unknown'}
 - Status: ${userProfile.isReturningUser ? 'Returning user' : 'New user'}
 ${userProfile.facts?.length ? `- Recent interests: ${userProfile.facts.slice(0, 3).join(', ')}` : ''}
+${backgroundState.topic ? `- Current Background Image: ${backgroundState.topic} (You can reference this - "as you can see in the image..." or "the image shows...")` : ''}
 
 ## RULES FOR THIS USER
 ${userName ? `The user's name is "${userName}". Use their name occasionally (not every message).` : 'The user has not provided their name yet.'}
@@ -582,11 +621,11 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
 - If asked "what is my name": ${userName ? `Answer "You're ${userName}, of course!"` : 'Say "I don\'t believe you\'ve told me your name yet. What should I call you?"'}
 - If asked about yourself: "I'm Vic Keegan, London historian and author of the Lost London books"
 
-## LIBRARIAN DELEGATION
+## ROSIE (London Archivist)
 - Use delegate_to_librarian tool when users ask about places, topics, or want to see visual content
-- For major searches, say "Let me check my archives..." BEFORE calling delegate_to_librarian
+- For major searches, say "Let me ask Rosie to check the archives..." BEFORE calling delegate_to_librarian
 - For follow-up queries, just delegate silently
-- The Librarian will find articles, maps, timelines - weave her findings into your narrative
+- Rosie will show articles, maps, timelines, and images in the sidebar - weave her findings into your narrative
 
 ## TOOL USAGE
 - delegate_to_librarian: For finding articles, maps, timelines about topics
@@ -606,10 +645,10 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
 - If asked "what is my name": Say "I don't believe you've told me your name yet. What should I call you?"
 - If asked about yourself: "I'm Vic Keegan, London historian and author of the Lost London books"
 
-## LIBRARIAN DELEGATION
+## ROSIE (London Archivist)
 - Use delegate_to_librarian tool when users ask about places, topics, or want to see visual content
-- For major searches, say "Let me check my archives..." BEFORE calling delegate_to_librarian
-- The Librarian will find articles, maps, timelines - weave her findings into your narrative
+- For major searches, say "Let me ask Rosie to check the archives..." BEFORE calling delegate_to_librarian
+- Rosie will show articles, maps, timelines, and images in the sidebar - weave her findings into your narrative
 
 ## TOOL USAGE
 - delegate_to_librarian: For finding articles, maps, timelines about topics
@@ -649,8 +688,11 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
     userImage: (user as any)?.image || undefined,
   };
 
-  // Background context value - memoized to prevent re-renders
-  const backgroundContextValue = { setBackground: setTopicBackground };
+  // Background context value - includes current state for VIC to know what's displayed
+  const backgroundContextValue = {
+    setBackground,
+    currentBackground: backgroundState,
+  };
 
   // CopilotKit custom styling - soft London aesthetic
   const copilotStyles: CopilotKitCSSProperties = {
@@ -660,15 +702,58 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
     "--copilot-kit-separator-color": "rgba(139, 105, 20, 0.2)",
   };
 
+  // Get setThreadId for clear conversation functionality
+  const { setThreadId } = useCopilotContext();
+
+  // Clear conversation handler - generates new thread ID
+  const handleClearConversation = () => {
+    const newThreadId = `thread_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    setThreadId(newThreadId);
+    // Also reset background
+    setBackground(null);
+  };
+
+  // Custom header with clear button
+  const CustomHeader = ({ onClose }: { onClose?: () => void }) => (
+    <div className="flex items-center justify-between p-3 border-b border-amber-200 bg-amber-50/80">
+      <div className="flex items-center gap-2">
+        <img src="/London Librarian Avatar 1.png" alt="Rosie" className="w-8 h-8 rounded-full" />
+        <span className="font-semibold text-amber-900">Rosie - London Archivist</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleClearConversation}
+          className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-100 rounded transition-colors"
+          title="Clear conversation"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-100 rounded transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
   // Shared props for both Sidebar and Popup
   const copilotProps = {
     instructions,
     labels: {
-      title: "London Librarian",
+      title: "Rosie - London Archivist",
       initial: initialMessage,
     },
     UserMessage: CustomUserMessage,
     AssistantMessage: SmartAssistantMessage,
+    Header: CustomHeader,
   };
 
   // Main content component - reused for both mobile and desktop
@@ -679,12 +764,20 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
         {/* Background - Dynamic or default map */}
         <div className="absolute inset-0 z-0">
           <img
-            src={topicBackground || "/London Map with River.jpg"}
+            src={backgroundState.url || "/London Map with River.jpg"}
             alt=""
             className="w-full h-full object-cover transition-all duration-1000"
-            style={{ opacity: topicBackground ? 0.5 : 0.4, filter: 'sepia(30%) contrast(1.1)' }}
+            style={{ opacity: backgroundState.url ? 0.5 : 0.4, filter: 'sepia(30%) contrast(1.1)' }}
           />
           <div className="absolute inset-0 bg-gradient-to-b from-[#1a1612]/70 via-[#1a1612]/40 to-[#1a1612]/90" />
+          {/* Image caption - shows topic name when dynamic image is displayed */}
+          {backgroundState.topic && (
+            <div className="absolute bottom-20 left-4 z-10">
+              <span className="text-white/70 text-xs font-medium bg-black/30 px-2 py-1 rounded backdrop-blur-sm">
+                {backgroundState.topic}
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="relative z-10 max-w-4xl mx-auto px-4 py-6 md:py-12 text-center">
@@ -775,6 +868,8 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
         )}
       </div>
     </ChatUserContext.Provider>
+    {/* Debug panel - toggle with button in bottom-right */}
+    <DebugPanel userId={user?.id} />
     </BackgroundContext.Provider>
   );
 }

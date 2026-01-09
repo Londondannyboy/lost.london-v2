@@ -122,6 +122,22 @@ body {
   background-color: rgba(250, 247, 240, 0.98);
 }
 
+/* FIX: Ensure messages container is fully scrollable */
+.copilotKitMessages {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  scroll-behavior: smooth !important;
+}
+
+/* Ensure the messages wrapper doesn't cut off top content */
+.copilotKitMessagesWrapper,
+[class*="MessagesWrapper"],
+[class*="messagesWrapper"] {
+  padding-top: 8px !important;
+  margin-top: 0 !important;
+}
+
 /* Header with subtle London feel */
 .copilotKitHeader {
   background-color: rgba(250, 247, 240, 0.95) !important;
