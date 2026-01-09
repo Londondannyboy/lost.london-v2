@@ -2321,3 +2321,80 @@ async def clear_zep_user(user_id: str):
         return {"success": True, "message": f"Cleared Zep memory for user {user_id}"}
     except Exception as e:
         return {"error": str(e), "user_id": user_id}
+
+
+@app.get("/debug/search-keywords/{query}")
+async def debug_search_keywords(query: str):
+    """Debug: Show what keyword matches for a query."""
+    query_lower = query.lower().strip()
+
+    # Check exact match
+    exact = query_lower in _keyword_cache
+    exact_match = _keyword_cache.get(query_lower)
+
+    # Check multi-word matches
+    multi_word_matches = [
+        kw for kw in _keyword_cache.keys()
+        if ' ' in kw and kw in query_lower
+    ]
+
+    # Check single word matches
+    single_word_matches = []
+    for word in query_lower.split():
+        if len(word) > 3 and word in _keyword_cache:
+            single_word_matches.append({
+                "word": word,
+                "article": _keyword_cache[word].get("title"),
+            })
+
+    return {
+        "query": query,
+        "exact_match": exact_match.get("title") if exact_match else None,
+        "multi_word_matches": multi_word_matches,
+        "single_word_matches": single_word_matches[:5],
+        "would_return": (
+            exact_match.get("title") if exact_match else
+            _keyword_cache.get(max(multi_word_matches, key=len)).get("title") if multi_word_matches else
+            single_word_matches[0].get("article") if single_word_matches else
+            None
+        ),
+    }
+
+
+@app.post("/debug/add-keywords")
+async def add_keywords_to_article(title_pattern: str, keywords: list[str]):
+    """Add keywords to an article matching the title pattern."""
+    from .database import get_connection
+
+    try:
+        async with get_connection() as conn:
+            # Find the article
+            article = await conn.fetchrow("""
+                SELECT id, title, topic_keywords FROM articles
+                WHERE LOWER(title) LIKE $1
+                LIMIT 1
+            """, f"%{title_pattern.lower()}%")
+
+            if not article:
+                return {"error": f"No article found matching '{title_pattern}'"}
+
+            # Merge existing and new keywords
+            existing = article['topic_keywords'] or []
+            merged = list(set(existing + [k.lower() for k in keywords]))
+
+            # Update
+            await conn.execute("""
+                UPDATE articles SET topic_keywords = $1 WHERE id = $2
+            """, merged, article['id'])
+
+            # Reload cache
+            await load_keyword_cache()
+
+            return {
+                "success": True,
+                "article": article['title'],
+                "keywords_added": keywords,
+                "total_keywords": len(merged),
+            }
+    except Exception as e:
+        return {"error": str(e)}
