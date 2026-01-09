@@ -925,8 +925,22 @@ app.add_middleware(
 # TWO-STAGE VOICE ARCHITECTURE - INSTANT RESPONSES
 # =============================================================================
 
+# Pydantic model for validated cache entries
+from pydantic import BaseModel
+from typing import Optional
+
+class TeaserData(BaseModel):
+    """Validated teaser data for an article."""
+    id: int
+    title: str
+    location: Optional[str] = None
+    era: Optional[str] = None
+    hook: Optional[str] = None
+    image_url: Optional[str] = None
+    slug: Optional[str] = None
+
 # In-memory cache for instant keyword lookup (loaded on startup)
-_keyword_cache: dict = {}  # keyword -> article teaser data
+_keyword_cache: dict[str, TeaserData] = {}  # keyword -> validated TeaserData
 _cache_loaded: bool = False
 
 # Background results storage for "yes" responses
@@ -949,15 +963,21 @@ async def load_keyword_cache():
             """)
 
             for row in results:
-                teaser_data = {
-                    "id": row['id'],
-                    "title": row['title'],
-                    "location": row['teaser_location'],
-                    "era": row['teaser_era'],
-                    "hook": row['teaser_hook'],
-                    "image_url": row['featured_image_url'],
-                    "slug": row['slug'],
-                }
+                # Pydantic-validated teaser data
+                try:
+                    teaser_data = TeaserData(
+                        id=row['id'],
+                        title=row['title'],
+                        location=row['teaser_location'],
+                        era=row['teaser_era'],
+                        hook=row['teaser_hook'],
+                        image_url=row['featured_image_url'],
+                        slug=row['slug'],
+                    )
+                except Exception as e:
+                    logger.warning(f"[VIC Cache] Validation failed for article {row['id']}: {e}")
+                    continue
+
                 title_lower = row['title'].lower()
                 # Map each keyword to this article's teaser
                 # Prioritize articles where keyword appears in title (more relevant)
@@ -974,7 +994,7 @@ async def load_keyword_cache():
         _cache_loaded = False
 
 
-def get_teaser_from_cache(query: str) -> dict | None:
+def get_teaser_from_cache(query: str) -> TeaserData | None:
     """Ultra-fast keyword lookup (<1ms).
 
     Priority order:
@@ -1032,12 +1052,12 @@ Rules:
     return _fast_teaser_agent
 
 
-async def generate_fast_teaser(teaser: dict, query: str) -> str:
+async def generate_fast_teaser(teaser: TeaserData, query: str) -> str:
     """Generate instant teaser response (~200ms)."""
-    prompt = f"""Topic: {teaser['title']}
-Location: {teaser.get('location', 'London')}
-Era: {teaser.get('era', '')}
-Interesting fact: {teaser.get('hook', '')}
+    prompt = f"""Topic: {teaser.title}
+Location: {teaser.location or 'London'}
+Era: {teaser.era or ''}
+Interesting fact: {teaser.hook or ''}
 
 User asked about: {query}
 
@@ -1050,10 +1070,10 @@ Give a brief, engaging teaser (1-2 sentences). End with a follow-up question."""
     except Exception as e:
         logger.error(f"[VIC Teaser] Error: {e}")
         # Fallback to template
-        location = teaser.get('location', 'London')
-        era = teaser.get('era', '')
+        location = teaser.location or 'London'
+        era = teaser.era or ''
         era_str = f" from the {era} era" if era else ""
-        return f"Ah, {teaser['title']}! A fascinating topic{era_str} in {location}. Shall I tell you more?"
+        return f"Ah, {teaser.title}! A fascinating topic{era_str} in {location}. Shall I tell you more?"
 
 
 async def load_full_article_background(query: str, session_id: str):
@@ -1389,12 +1409,26 @@ async def clm_endpoint(request: Request):
     )
 
     if is_noise:
-        logger.info(f"[VIC CLM] Ignoring empty/noise message: '{user_msg}' -> '{clean_query}'")
-        # Return empty response - don't generate random content
-        return StreamingResponse(
-            stream_sse_response("", str(uuid.uuid4())),
-            media_type="text/event-stream"
-        )
+        logger.info(f"[VIC CLM] Noise/silence detected: '{user_msg}' -> '{clean_query}'")
+
+        # Check if we have a recent topic - offer to continue or change
+        session_key = session_id or "default"
+        last_topic = get_last_suggestion(session_key)
+
+        if last_topic:
+            # Human-like response: pause after facts = ask if they want more
+            response_text = f"Would you like to know more about {last_topic}, or shall we explore something else?"
+            logger.info(f"[VIC CLM] Offering continuation for '{last_topic}'")
+            return StreamingResponse(
+                stream_sse_response(response_text, str(uuid.uuid4())),
+                media_type="text/event-stream"
+            )
+        else:
+            # No recent topic - just return empty (truly nothing to say)
+            return StreamingResponse(
+                stream_sse_response("", str(uuid.uuid4())),
+                media_type="text/event-stream"
+            )
 
     # Use clean query for the rest of the processing
     normalized_query = clean_query
@@ -1546,18 +1580,19 @@ from Roman London to Victorian music halls. Would you like to hear about any par
     teaser = None if skip_to_full_response else get_teaser_from_cache(normalized_query)
 
     if teaser:
-        logger.info(f"[VIC Stage1] FAST MATCH: '{teaser['title']}' for query '{normalized_query}'")
+        logger.info(f"[VIC Stage1] FAST MATCH: '{teaser.title}' for query '{normalized_query}'")
         _last_request_debug["stage"] = "Stage1-Teaser"
         _last_request_debug["teaser_match"] = {
-            "title": teaser['title'],
-            "location": teaser.get('location'),
-            "era": teaser.get('era'),
-            "hook": teaser.get('hook'),
+            "title": teaser.title,
+            "location": teaser.location,
+            "era": teaser.era,
+            "hook": teaser.hook,
+            "validated": True,  # Pydantic validated!
         }
 
         # Store suggestion for "yes" handling - uses same key as get_last_suggestion
-        set_last_suggestion(session_key, teaser['title'])
-        logger.info(f"[VIC Stage1] Stored last_suggestion='{teaser['title']}' for session='{session_key}'")
+        set_last_suggestion(session_key, teaser.title)
+        logger.info(f"[VIC Stage1] Stored last_suggestion='{teaser.title}' for session='{session_key}'")
 
         # Kick off background loading (don't await - runs while user listens)
         import asyncio
@@ -2325,11 +2360,10 @@ async def clear_zep_user(user_id: str):
 
 @app.get("/debug/search-keywords/{query}")
 async def debug_search_keywords(query: str):
-    """Debug: Show what keyword matches for a query."""
+    """Debug: Show what keyword matches for a query (Pydantic validated)."""
     query_lower = query.lower().strip()
 
     # Check exact match
-    exact = query_lower in _keyword_cache
     exact_match = _keyword_cache.get(query_lower)
 
     # Check multi-word matches
@@ -2344,20 +2378,27 @@ async def debug_search_keywords(query: str):
         if len(word) > 3 and word in _keyword_cache:
             single_word_matches.append({
                 "word": word,
-                "article": _keyword_cache[word].get("title"),
+                "article": _keyword_cache[word].title,  # Pydantic attribute
             })
+
+    # Determine what would be returned
+    would_return = None
+    if exact_match:
+        would_return = exact_match.title
+    elif multi_word_matches:
+        best = max(multi_word_matches, key=len)
+        would_return = _keyword_cache[best].title
+    elif single_word_matches:
+        would_return = single_word_matches[0].get("article")
 
     return {
         "query": query,
-        "exact_match": exact_match.get("title") if exact_match else None,
+        "pydantic_validated": True,
+        "exact_match": exact_match.title if exact_match else None,
+        "exact_match_details": exact_match.model_dump() if exact_match else None,
         "multi_word_matches": multi_word_matches,
         "single_word_matches": single_word_matches[:5],
-        "would_return": (
-            exact_match.get("title") if exact_match else
-            _keyword_cache.get(max(multi_word_matches, key=len)).get("title") if multi_word_matches else
-            single_word_matches[0].get("article") if single_word_matches else
-            None
-        ),
+        "would_return": would_return,
     }
 
 
