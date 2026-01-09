@@ -14,6 +14,7 @@ import { TopicImage } from "@/components/generative-ui/TopicImage";
 import { LibrarianMessage, LibrarianThinking } from "@/components/LibrarianAvatar";
 import { CustomUserMessage, ChatUserContext } from "@/components/ChatMessages";
 import { DebugPanel } from "@/components/DebugPanel";
+import { RosieVoice } from "@/components/rosie-voice";
 import { useCallback, useEffect, useState } from "react";
 import { authClient } from "@/lib/auth/client";
 
@@ -321,10 +322,20 @@ type AgentState = {
   };
 };
 
+// Type for Rosie's article announcements
+interface RosieArticles {
+  query: string;
+  count: number;
+  titles: string[];
+}
+
 export default function Home() {
   const { appendMessage } = useCopilotChat();
   const { data: session } = authClient.useSession();
   const user = session?.user;
+
+  // Rosie voice: articles to announce when found
+  const [rosieArticles, setRosieArticles] = useState<RosieArticles | null>(null);
 
   // Collapse sidebar on mobile - voice is the primary experience
   const isMobile = useIsMobile();
@@ -576,6 +587,15 @@ export default function Home() {
           }
         }
 
+        // Set Rosie's articles to announce (for dual-voice prototype)
+        if (uiData?.articles && uiData.articles.length > 0) {
+          setRosieArticles({
+            query: uiData.query || "your topic",
+            count: uiData.articles.length,
+            titles: uiData.articles.map((a: any) => a.title || a.name).slice(0, 3),
+          });
+        }
+
         return (
           <>
             {/* Update hero background when topic has an image */}
@@ -818,6 +838,7 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
         <div className="relative z-10 max-w-4xl mx-auto px-4 py-6 md:py-12 text-center">
           {/* VIC Avatar - The hero, center stage on all devices */}
           <div className="flex flex-col items-center mb-6">
+            {/* VIC Avatar - Primary Voice */}
             <VoiceInput
               onMessage={handleVoiceMessage}
               userId={user?.id}
@@ -825,6 +846,21 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
               isReturningUser={userProfile.isReturningUser}
               userFacts={userProfile.facts}
             />
+
+            {/* Rosie Voice - Secondary (announces articles found) */}
+            {/* Only render if NEXT_PUBLIC_HUME_ROSIE_CONFIG_ID is set */}
+            {process.env.NEXT_PUBLIC_HUME_ROSIE_CONFIG_ID && (
+              <div className="absolute bottom-4 right-4">
+                <RosieVoice
+                  onMessage={handleVoiceMessage}
+                  articlesToAnnounce={rosieArticles}
+                  onSpeakComplete={() => {
+                    // Clear after Rosie speaks
+                    setRosieArticles(null);
+                  }}
+                />
+              </div>
+            )}
           </div>
 
           {/* Quick Topics - clean pills */}

@@ -143,6 +143,7 @@ AGENT_URL=https://lost-london-v2-production.up.railway.app/agui
 HUME_API_KEY=FS313vtpHE8svozXdt7hAs3m0U4rd0dJwV1VW0fWF9cewu79
 HUME_SECRET_KEY=4LF8hFTCcMhbl3fbuOO8UGAKpoXdJ91xWjnSUTrCfhsV8GN20A2Xkgs0Y4tPXXbN
 NEXT_PUBLIC_HUME_CONFIG_ID=6b57249f-a118-45ce-88ab-b80899bf9864
+NEXT_PUBLIC_HUME_ROSIE_CONFIG_ID=421e1f52-1116-4670-98c2-5d68e49d0498
 DATABASE_URL=postgresql://neondb_owner:npg_0HmvsELjo8Gr@ep-ancient-violet-abx9ybhn-pooler.eu-west-2.aws.neon.tech/neondb?sslmode=require
 ZEP_API_KEY=(set in Vercel dashboard)
 ```

@@ -1,5 +1,5 @@
 /**
- * Zep User Memory API - Structured Entity Storage
+ * Zep User Memory API - Structured Entity Storage with Zod Validation
  *
  * Stores SPECIFIC structured entities in Zep graph:
  * - TopicInterest: Royal Aquarium, Thorney Island (not "London history")
@@ -7,42 +7,51 @@
  * - LocationInterest: Westminster, Southwark
  * - EraInterest: Victorian, Tudor
  *
+ * Uses Zod (TypeScript Pydantic equivalent) for validation BEFORE storing.
  * This mirrors how CopilotKit demo stores structured profile data.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { ZepClient } from "@getzep/zep-cloud";
+import { z } from "zod";
 
 // ============================================================================
-// STRUCTURED ENTITY TYPES (like CopilotKit demo)
+// ZOD SCHEMAS - Pydantic-equivalent validation for TypeScript
+// Data is validated BEFORE being stored to Zep
 // ============================================================================
 
-interface TopicEntity {
-  entity_type: "topic_interest";
-  topic_name: string;      // "Royal Aquarium" not "London history"
-  era?: string;            // "Victorian"
-  location?: string;       // "Westminster"
-  explored_at: string;     // ISO timestamp
-}
+const TopicEntitySchema = z.object({
+  entity_type: z.literal("topic_interest"),
+  topic_name: z.string().min(3, "Topic must be at least 3 characters"),
+  era: z.string().optional(),
+  location: z.string().optional(),
+  explored_at: z.string().datetime(),
+});
 
-interface UserProfileEntity {
-  entity_type: "user_profile";
-  preferred_name: string;
-  first_seen: string;
-  last_seen: string;
-}
+const UserProfileEntitySchema = z.object({
+  entity_type: z.literal("user_profile"),
+  preferred_name: z.string().min(1, "Name is required"),
+  first_seen: z.string().datetime(),
+  last_seen: z.string().datetime(),
+});
 
-interface LocationEntity {
-  entity_type: "location_interest";
-  location_name: string;   // "Westminster", "Southwark"
-  explored_at: string;
-}
+const LocationEntitySchema = z.object({
+  entity_type: z.literal("location_interest"),
+  location_name: z.string().min(2, "Location must be at least 2 characters"),
+  explored_at: z.string().datetime(),
+});
 
-interface EraEntity {
-  entity_type: "era_interest";
-  era_name: string;        // "Victorian", "Tudor"
-  explored_at: string;
-}
+const EraEntitySchema = z.object({
+  entity_type: z.literal("era_interest"),
+  era_name: z.string().min(2, "Era must be at least 2 characters"),
+  explored_at: z.string().datetime(),
+});
+
+// Infer types from schemas
+type TopicEntity = z.infer<typeof TopicEntitySchema>;
+type UserProfileEntity = z.infer<typeof UserProfileEntitySchema>;
+type LocationEntity = z.infer<typeof LocationEntitySchema>;
+type EraEntity = z.infer<typeof EraEntitySchema>;
 
 // ============================================================================
 // GET: Retrieve structured user profile
@@ -151,16 +160,28 @@ export async function POST(request: NextRequest) {
     // ACTION: topic_interest - Store a SPECIFIC topic (not generic "London")
     // ========================================================================
     if (action === "topic_interest" && topic) {
-      // Store as structured entity - SPECIFIC topic name
-      const entity: TopicEntity = {
-        entity_type: "topic_interest",
-        topic_name: topic,  // "Royal Aquarium", "Thorney Island"
-        era: era,           // "Victorian"
-        location: location, // "Westminster"
+      // Validate with Zod BEFORE storing (Pydantic-equivalent)
+      const entityData = {
+        entity_type: "topic_interest" as const,
+        topic_name: topic,
+        era: era || undefined,
+        location: location || undefined,
         explored_at: timestamp,
       };
 
-      // Store structured JSON
+      const validation = TopicEntitySchema.safeParse(entityData);
+      if (!validation.success) {
+        console.warn(`[Zep User] Validation failed for topic:`, validation.error.flatten());
+        return NextResponse.json({
+          success: false,
+          reason: "Validation failed",
+          errors: validation.error.flatten().fieldErrors,
+        });
+      }
+
+      const entity: TopicEntity = validation.data;
+
+      // Store validated structured JSON
       await client.graph.add({
         userId,
         type: "json",
@@ -168,10 +189,9 @@ export async function POST(request: NextRequest) {
       });
 
       // ALSO store a SPECIFIC fact statement that will extract properly
-      // Format: "[Name] is interested in [SPECIFIC TOPIC]" not generic "London history"
       const factText = name
-        ? `${name} is interested in ${topic}.${era ? ` This is from the ${era} era.` : ''}${location ? ` Located in ${location}.` : ''}`
-        : `User is interested in ${topic}.${era ? ` This is from the ${era} era.` : ''}`;
+        ? `${name} is interested in ${entity.topic_name}.${entity.era ? ` This is from the ${entity.era} era.` : ''}${entity.location ? ` Located in ${entity.location}.` : ''}`
+        : `User is interested in ${entity.topic_name}.${entity.era ? ` This is from the ${entity.era} era.` : ''}`;
 
       await client.graph.add({
         userId,
@@ -179,11 +199,12 @@ export async function POST(request: NextRequest) {
         data: factText,
       });
 
-      console.log(`[Zep User] Stored topic: "${topic}" (${era || 'no era'}, ${location || 'no location'})`);
+      console.log(`[Zep User] Validated & stored topic: "${entity.topic_name}" (${entity.era || 'no era'}, ${entity.location || 'no location'})`);
 
       return NextResponse.json({
         success: true,
-        stored: { topic, era, location },
+        validated: true,
+        stored: { topic: entity.topic_name, era: entity.era, location: entity.location },
       });
     }
 
@@ -191,82 +212,70 @@ export async function POST(request: NextRequest) {
     // ACTION: location_interest - Store a specific London location
     // ========================================================================
     if (action === "location_interest" && location) {
-      const entity: LocationEntity = {
-        entity_type: "location_interest",
+      const validation = LocationEntitySchema.safeParse({
+        entity_type: "location_interest" as const,
         location_name: location,
         explored_at: timestamp,
-      };
-
-      await client.graph.add({
-        userId,
-        type: "json",
-        data: JSON.stringify(entity),
       });
 
-      await client.graph.add({
-        userId,
-        type: "text",
-        data: `${name || 'User'} is interested in ${location} in London.`,
-      });
+      if (!validation.success) {
+        return NextResponse.json({ success: false, reason: "Validation failed", errors: validation.error.flatten().fieldErrors });
+      }
 
-      console.log(`[Zep User] Stored location interest: "${location}"`);
+      const entity = validation.data;
 
-      return NextResponse.json({ success: true, stored: { location } });
+      await client.graph.add({ userId, type: "json", data: JSON.stringify(entity) });
+      await client.graph.add({ userId, type: "text", data: `${name || 'User'} is interested in ${entity.location_name} in London.` });
+
+      console.log(`[Zep User] Validated & stored location: "${entity.location_name}"`);
+      return NextResponse.json({ success: true, validated: true, stored: { location: entity.location_name } });
     }
 
     // ========================================================================
     // ACTION: era_interest - Store a specific historical era
     // ========================================================================
     if (action === "era_interest" && era) {
-      const entity: EraEntity = {
-        entity_type: "era_interest",
+      const validation = EraEntitySchema.safeParse({
+        entity_type: "era_interest" as const,
         era_name: era,
         explored_at: timestamp,
-      };
-
-      await client.graph.add({
-        userId,
-        type: "json",
-        data: JSON.stringify(entity),
       });
 
-      await client.graph.add({
-        userId,
-        type: "text",
-        data: `${name || 'User'} is interested in the ${era} era of London history.`,
-      });
+      if (!validation.success) {
+        return NextResponse.json({ success: false, reason: "Validation failed", errors: validation.error.flatten().fieldErrors });
+      }
 
-      console.log(`[Zep User] Stored era interest: "${era}"`);
+      const entity = validation.data;
 
-      return NextResponse.json({ success: true, stored: { era } });
+      await client.graph.add({ userId, type: "json", data: JSON.stringify(entity) });
+      await client.graph.add({ userId, type: "text", data: `${name || 'User'} is interested in the ${entity.era_name} era of London history.` });
+
+      console.log(`[Zep User] Validated & stored era: "${entity.era_name}"`);
+      return NextResponse.json({ success: true, validated: true, stored: { era: entity.era_name } });
     }
 
     // ========================================================================
     // ACTION: user_profile - Store user's name and preferences
     // ========================================================================
     if (action === "user_profile" && name) {
-      const entity: UserProfileEntity = {
-        entity_type: "user_profile",
+      const validation = UserProfileEntitySchema.safeParse({
+        entity_type: "user_profile" as const,
         preferred_name: name,
         first_seen: timestamp,
         last_seen: timestamp,
-      };
-
-      await client.graph.add({
-        userId,
-        type: "json",
-        data: JSON.stringify(entity),
       });
 
-      await client.graph.add({
-        userId,
-        type: "text",
-        data: `The user's preferred name is ${name}. They enjoy exploring London's hidden history.`,
-      });
+      if (!validation.success) {
+        return NextResponse.json({ success: false, reason: "Validation failed", errors: validation.error.flatten().fieldErrors });
+      }
 
-      console.log(`[Zep User] Stored user profile: name="${name}"`);
+      const entity = validation.data;
 
-      return NextResponse.json({ success: true, stored: { name } });
+      await client.graph.add({ userId, type: "json", data: JSON.stringify(entity) });
+      await client.graph.add({ userId, type: "text", data: `The user's preferred name is ${entity.preferred_name}. They enjoy exploring London's hidden history.` });
+
+      console.log(`[Zep User] Validated & stored profile: name="${entity.preferred_name}"`);
+      return NextResponse.json({ success: true, validated: true, stored: { name: entity.preferred_name } });
     }
 
     return NextResponse.json({ success: false, reason: "Unknown action or missing required fields" });
