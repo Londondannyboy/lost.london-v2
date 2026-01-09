@@ -975,20 +975,37 @@ async def load_keyword_cache():
 
 
 def get_teaser_from_cache(query: str) -> dict | None:
-    """Ultra-fast keyword lookup (<1ms)."""
+    """Ultra-fast keyword lookup (<1ms).
+
+    Priority order:
+    1. Exact match for full query
+    2. Multi-word phrase matches (longer = more specific = better)
+    3. Single word matches (fallback)
+    """
     if not _cache_loaded:
         return None
 
-    # Check each word in the query
-    for word in query.lower().split():
-        if len(word) > 2 and word in _keyword_cache:
-            return _keyword_cache[word]
+    query_lower = query.lower().strip()
 
-    # Also check multi-word phrases
-    query_lower = query.lower()
-    for keyword in _keyword_cache:
-        if keyword in query_lower:
-            return _keyword_cache[keyword]
+    # 1. Check for exact full query match first
+    if query_lower in _keyword_cache:
+        return _keyword_cache[query_lower]
+
+    # 2. Check for multi-word phrase matches (prioritize longer matches)
+    # Sort keywords by length descending so "royal aquarium" beats "royal"
+    matching_keywords = [
+        kw for kw in _keyword_cache.keys()
+        if ' ' in kw and kw in query_lower  # Multi-word and present in query
+    ]
+    if matching_keywords:
+        # Return the longest matching multi-word keyword
+        best_match = max(matching_keywords, key=len)
+        return _keyword_cache[best_match]
+
+    # 3. Fallback: check single words in query order
+    for word in query_lower.split():
+        if len(word) > 3 and word in _keyword_cache:  # Increased min length to 4
+            return _keyword_cache[word]
 
     return None
 
@@ -1360,13 +1377,27 @@ async def clm_endpoint(request: Request):
     # ==========================================================================
     # EMPTY/NOISE FILTER - Don't respond to silence or noise from Hume
     # ==========================================================================
-    if len(normalized_query.strip()) < 2:
-        logger.info(f"[VIC CLM] Ignoring empty/noise message: '{user_msg}'")
+    # Strip Hume emotion markers like {calm, focused, interested}
+    import re
+    clean_query = re.sub(r'\{[^}]*\}', '', normalized_query).strip()
+
+    # Check if remaining content is too short or just noise
+    is_noise = (
+        len(clean_query) < 3 or
+        clean_query.lower() in ['the', 'a', 'an', 'um', 'uh', 'hmm', 'oh', 'ah'] or
+        not any(c.isalpha() for c in clean_query)  # No letters at all
+    )
+
+    if is_noise:
+        logger.info(f"[VIC CLM] Ignoring empty/noise message: '{user_msg}' -> '{clean_query}'")
         # Return empty response - don't generate random content
         return StreamingResponse(
             stream_sse_response("", str(uuid.uuid4())),
             media_type="text/event-stream"
         )
+
+    # Use clean query for the rest of the processing
+    normalized_query = clean_query
 
     # Easter egg check
     if "rosie" in normalized_query.lower():

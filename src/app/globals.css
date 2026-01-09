@@ -128,6 +128,28 @@ body {
   overflow-x: hidden !important;
   -webkit-overflow-scrolling: touch !important;
   scroll-behavior: smooth !important;
+  height: 100% !important;
+  max-height: none !important;
+}
+
+/* Force the entire sidebar content to be scrollable */
+.copilotKitWindow {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+.copilotKitWindow > div:first-child {
+  flex-shrink: 0 !important; /* Header doesn't shrink */
+}
+
+.copilotKitMessagesContainer {
+  flex: 1 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  min-height: 0 !important; /* Critical for flex scroll */
+  padding-bottom: 20px !important;
 }
 
 /* Ensure the messages wrapper doesn't cut off top content */
@@ -136,6 +158,7 @@ body {
 [class*="messagesWrapper"] {
   padding-top: 8px !important;
   margin-top: 0 !important;
+  overflow-y: auto !important;
 }
 
 /* Header with subtle London feel */

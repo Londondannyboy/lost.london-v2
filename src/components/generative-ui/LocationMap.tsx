@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface LocationMapProps {
   location: {
@@ -14,6 +14,17 @@ interface LocationMapProps {
 export function LocationMap({ location }: LocationMapProps) {
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [iframeError, setIframeError] = useState(false);
+  const [showFallback, setShowFallback] = useState(false);
+
+  // Timeout to show fallback if iframe doesn't load
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!iframeLoaded) {
+        setShowFallback(true);
+      }
+    }, 3000); // 3 seconds timeout
+    return () => clearTimeout(timer);
+  }, [iframeLoaded]);
 
   // OpenStreetMap embed URL
   const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${location.lng - 0.008},${location.lat - 0.005},${location.lng + 0.008},${location.lat + 0.005}&layer=mapnik&marker=${location.lat},${location.lng}`;
@@ -39,7 +50,7 @@ export function LocationMap({ location }: LocationMapProps) {
         )}
 
         {/* Error/fallback state - styled placeholder with links */}
-        {iframeError && (
+        {(iframeError || showFallback) && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-blue-100 via-blue-50 to-cyan-100">
             <div className="bg-white/80 rounded-lg p-4 text-center shadow-sm">
               <svg className="w-10 h-10 text-blue-500 mx-auto mb-2" fill="currentColor" viewBox="0 0 20 20">

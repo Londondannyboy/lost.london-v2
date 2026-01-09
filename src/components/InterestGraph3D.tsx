@@ -197,18 +197,35 @@ export function InterestGraph3D({ interests, facts = [], userName, onClearHistor
           width={dimensions.width}
           height={dimensions.height}
           backgroundColor="#111827"
-          nodeLabel={(node: any) => `${node.name}${node.type !== 'user' ? ` (${node.type})` : ''}`}
+          nodeLabel={(node: any) => `${node.name} (${node.type})`}
           nodeColor={(node: any) => node.color}
           nodeVal={(node: any) => node.val}
-          nodeOpacity={0.9}
-          linkColor={() => 'rgba(255,255,255,0.2)'}
-          linkWidth={1}
-          linkOpacity={0.4}
+          nodeOpacity={0.95}
+          nodeResolution={16}
+          linkColor={() => 'rgba(255,255,255,0.4)'}
+          linkWidth={2}
+          linkOpacity={0.6}
           onNodeClick={(node: any) => handleNodeClick(node as GraphNode)}
           enableNodeDrag={true}
           enableNavigationControls={true}
           showNavInfo={false}
+          nodeAutoColorBy="type"
         />
+      </div>
+
+      {/* Node labels legend - show current nodes */}
+      <div className="px-4 py-2 bg-gray-800/50 text-xs text-white max-h-24 overflow-y-auto">
+        <div className="flex flex-wrap gap-2">
+          {graphData.nodes.filter(n => n.type !== 'user').map((node, i) => (
+            <span
+              key={i}
+              className="px-2 py-0.5 rounded-full text-white font-medium"
+              style={{ backgroundColor: node.color }}
+            >
+              {node.name}
+            </span>
+          ))}
+        </div>
       </div>
 
       {/* Legend */}
