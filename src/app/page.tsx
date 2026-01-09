@@ -245,9 +245,21 @@ function extractTopicFromQuery(query: string): string | null {
   return null;
 }
 
-// Helper to store topic interest to Zep (for returning user context)
-async function storeTopicToZep(userId: string, topic: string, name?: string) {
+// Helper to store STRUCTURED topic interest to Zep (with era, location)
+// This creates specific entities like "Royal Aquarium" not generic "London history"
+async function storeTopicToZep(
+  userId: string,
+  topic: string,
+  name?: string,
+  era?: string,
+  location?: string
+) {
   if (!userId || !topic || topic.length < 3) return;
+
+  // Filter out generic topics
+  const genericTopics = ['london', 'history', 'london history', 'the'];
+  if (genericTopics.includes(topic.toLowerCase())) return;
+
   try {
     await fetch('/api/zep/user', {
       method: 'POST',
@@ -255,11 +267,13 @@ async function storeTopicToZep(userId: string, topic: string, name?: string) {
       body: JSON.stringify({
         userId,
         action: 'topic_interest',
-        topic,
+        topic,      // "Royal Aquarium", "Thorney Island"
+        era,        // "Victorian"
+        location,   // "Westminster"
         name,
       }),
     });
-    console.log('[Zep] Stored topic interest:', topic);
+    console.log(`[Zep] Stored topic: "${topic}" (era: ${era || 'none'}, location: ${location || 'none'})`);
   } catch (e) {
     console.warn('[Zep] Failed to store topic:', e);
   }
@@ -541,6 +555,27 @@ export default function Home() {
 
       // TopicContext is rendered directly (it includes its own Librarian header)
       if (uiComponent === "TopicContext") {
+        // Store STRUCTURED topic to Zep with era/location (not just generic "London")
+        // This ensures dashboard shows "Royal Aquarium" not "interested in history"
+        if (user?.id && uiData?.query) {
+          const topicName = uiData.query;
+          const eraName = uiData?.era;
+          const locationName = typeof uiData?.location === 'string'
+            ? uiData.location
+            : uiData?.location?.name;
+
+          // Only store if it's a specific topic (not generic)
+          if (topicName && topicName.length > 3) {
+            storeTopicToZep(
+              user.id,
+              topicName,
+              userProfile.preferred_name,
+              eraName,
+              locationName
+            );
+          }
+        }
+
         return (
           <>
             {/* Update hero background when topic has an image */}

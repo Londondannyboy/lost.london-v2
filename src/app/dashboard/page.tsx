@@ -24,6 +24,9 @@ export default function DashboardPage() {
   const router = useRouter();
   const { data: session, isPending } = authClient.useSession();
   const [zepFacts, setZepFacts] = useState<string[]>([]);
+  const [topics, setTopics] = useState<string[]>([]);      // Specific topics: "Royal Aquarium"
+  const [locations, setLocations] = useState<string[]>([]); // "Westminster", "Southwark"
+  const [eras, setEras] = useState<string[]>([]);           // "Victorian", "Tudor"
   const [interests, setInterests] = useState<string[]>([]);
   const [interestsWithCounts, setInterestsWithCounts] = useState<InterestWithCount[]>([]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -51,29 +54,33 @@ export default function DashboardPage() {
       const res = await fetch(`/api/zep/user?userId=${session.user.id}`);
       if (res.ok) {
         const data = await res.json();
-        const facts = (data.facts || [])
-          .map((f: ZepFact) => f.fact)
-          .filter(Boolean);
-        setZepFacts(facts);
-        setInterests(data.interests || []);
 
-        // Build interests with counts from facts
+        // New structured format: topics, locations, eras arrays
+        setTopics(data.topics || []);
+        setLocations(data.locations || []);
+        setEras(data.eras || []);
+
+        // Legacy format for backwards compatibility
+        const facts = (data.facts || []).filter(Boolean);
+        setZepFacts(facts);
+        setInterests(data.interests || data.topics || []);
+
+        // Build interests with counts from SPECIFIC topics (not generic facts)
         const topicCounts = new Map<string, number>();
-        facts.forEach((fact: string) => {
-          // Extract topics from facts
-          const topicMatches = fact.match(/interested in (.+)|discussed (.+)|asked about (.+)|explored (.+)/i);
-          if (topicMatches) {
-            const topic = (topicMatches[1] || topicMatches[2] || topicMatches[3] || topicMatches[4])
-              .split(',')[0].trim();
-            if (topic && topic.length > 2) {
-              topicCounts.set(topic, (topicCounts.get(topic) || 0) + 1);
-            }
+
+        // Count from new structured topics array (preferred)
+        (data.topics || []).forEach((topic: string) => {
+          if (topic && topic.length > 2) {
+            topicCounts.set(topic, (topicCounts.get(topic) || 0) + 1);
           }
         });
 
-        // Also count from interests array
-        (data.interests || []).forEach((interest: string) => {
-          topicCounts.set(interest, (topicCounts.get(interest) || 0) + 1);
+        // Add locations and eras with lower weight
+        (data.locations || []).forEach((loc: string) => {
+          topicCounts.set(loc, (topicCounts.get(loc) || 0) + 1);
+        });
+        (data.eras || []).forEach((era: string) => {
+          topicCounts.set(`${era} era`, (topicCounts.get(`${era} era`) || 0) + 1);
         });
 
         const countsArray: InterestWithCount[] = Array.from(topicCounts.entries())
@@ -82,6 +89,12 @@ export default function DashboardPage() {
           .slice(0, 10);
 
         setInterestsWithCounts(countsArray);
+
+        console.log('[Dashboard] Loaded structured profile:', {
+          topics: data.topics?.length || 0,
+          locations: data.locations?.length || 0,
+          eras: data.eras?.length || 0,
+        });
       }
     } catch (error) {
       console.error('Failed to fetch Zep data:', error);
@@ -119,8 +132,11 @@ export default function DashboardPage() {
       );
 
       if (res.ok) {
-        // Clear local state
+        // Clear all local state
         setZepFacts([]);
+        setTopics([]);
+        setLocations([]);
+        setEras([]);
         setInterests([]);
         setInterestsWithCounts([]);
 
