@@ -997,6 +997,18 @@ class TeaserData(BaseModel):
 _keyword_cache: dict[str, TeaserData] = {}  # keyword -> validated TeaserData
 _cache_loaded: bool = False
 
+# Stopwords to filter from keyword cache (these match too many queries)
+KEYWORD_STOPWORDS = frozenset([
+    'with', 'what', 'the', 'and', 'for', 'that', 'this', 'from', 'have', 'will',
+    'your', 'you', 'are', 'was', 'it', 'its', 'to', 'of', 'in', 'on', 'at',
+    'be', 'is', 'as', 'by', 'or', 'an', 'a', 'so', 'if', 'but', 'not', 'all',
+    'been', 'had', 'has', 'his', 'her', 'he', 'she', 'they', 'them', 'their',
+    'who', 'which', 'when', 'where', 'how', 'why', 'can', 'could', 'would',
+    'should', 'may', 'might', 'must', 'shall', 'will', 'do', 'does', 'did',
+    'more', 'some', 'any', 'no', 'yes', 'up', 'down', 'out', 'into', 'over',
+    'under', 'again', 'then', 'once', 'here', 'there', 'about', 'after', 'before',
+])
+
 # Background results storage for "yes" responses
 _background_results: dict = {}  # session_id -> {query, content, articles, ready}
 
@@ -1016,6 +1028,7 @@ async def load_keyword_cache():
                 WHERE topic_keywords IS NOT NULL AND array_length(topic_keywords, 1) > 0
             """)
 
+            skipped_stopwords = 0
             for row in results:
                 # Pydantic-validated teaser data
                 try:
@@ -1037,12 +1050,16 @@ async def load_keyword_cache():
                 # Prioritize articles where keyword appears in title (more relevant)
                 for keyword in (row['topic_keywords'] or []):
                     kw_lower = keyword.lower()
+                    # Skip stopwords - they match too many queries and cause topic drift
+                    if kw_lower in KEYWORD_STOPWORDS:
+                        skipped_stopwords += 1
+                        continue
                     # Only set if: not in cache yet, OR this article has keyword in title
                     if kw_lower not in _keyword_cache or kw_lower in title_lower:
                         _keyword_cache[kw_lower] = teaser_data
 
             _cache_loaded = True
-            logger.info(f"[VIC Cache] Loaded {len(_keyword_cache)} keywords from {len(results)} articles")
+            logger.info(f"[VIC Cache] Loaded {len(_keyword_cache)} keywords from {len(results)} articles (skipped {skipped_stopwords} stopwords)")
     except Exception as e:
         logger.error(f"[VIC Cache] Failed to load: {e}")
         _cache_loaded = False
