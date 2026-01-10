@@ -84,6 +84,10 @@ class SessionContext:
     suggestions: list = field(default_factory=list)  # Related topics
     last_suggested_topic: str = ""  # What VIC suggested (for "yes" handling)
 
+    # CONVERSATION HISTORY (for staying on topic - fixes rambling)
+    conversation_history: list = field(default_factory=list)  # [(role, text), ...]
+    current_topic_context: str = ""  # "Currently discussing: Royal Aquarium"
+
 
 def get_session_context(session_id: str) -> SessionContext:
     """Get or create session context with LRU eviction."""
@@ -135,6 +139,56 @@ def increment_turn(session_id: str):
     ctx = get_session_context(session_id)
     ctx.turns_since_name_used += 1
     ctx.last_interaction_time = time.time()
+
+
+# =============================================================================
+# CONVERSATION HISTORY (CRITICAL FOR STAYING ON TOPIC - FIXES RAMBLING)
+# =============================================================================
+
+MAX_HISTORY_TURNS = 4  # Keep last 4 exchanges (user + assistant)
+
+
+def add_to_history(session_id: str, role: str, text: str):
+    """Add an exchange to conversation history (max 4 turns)."""
+    ctx = get_session_context(session_id)
+
+    # Truncate long messages for history
+    truncated = text[:200] + "..." if len(text) > 200 else text
+
+    ctx.conversation_history.append((role, truncated))
+
+    # Keep only last MAX_HISTORY_TURNS exchanges
+    if len(ctx.conversation_history) > MAX_HISTORY_TURNS * 2:
+        ctx.conversation_history = ctx.conversation_history[-MAX_HISTORY_TURNS * 2:]
+
+
+def get_history_context(session_id: str) -> str:
+    """Get formatted conversation history for prompt."""
+    ctx = get_session_context(session_id)
+
+    if not ctx.conversation_history:
+        return ""
+
+    lines = []
+    for role, text in ctx.conversation_history[-6:]:  # Last 3 exchanges
+        prefix = "User" if role == "user" else "VIC"
+        lines.append(f"{prefix}: {text}")
+
+    return "\n".join(lines)
+
+
+def set_current_topic(session_id: str, topic: str):
+    """Set the current topic being discussed."""
+    ctx = get_session_context(session_id)
+    ctx.current_topic_context = topic
+    ctx.last_topic = topic
+    logger.info(f"[Session] Set current topic: '{topic}' for session {session_id}")
+
+
+def get_current_topic(session_id: str) -> str:
+    """Get the current topic being discussed."""
+    ctx = get_session_context(session_id)
+    return ctx.current_topic_context or ctx.last_topic or ""
 
 
 # =============================================================================
@@ -1413,12 +1467,15 @@ async def clm_endpoint(request: Request):
 
         # Check if we have a recent topic - offer to continue or change
         session_key = session_id or "default"
-        last_topic = get_last_suggestion(session_key)
+        current_topic = get_current_topic(session_key)
+        last_topic = get_last_suggestion(session_key) or current_topic
 
         if last_topic:
             # Human-like response: pause after facts = ask if they want more
             response_text = f"Would you like to know more about {last_topic}, or shall we explore something else?"
             logger.info(f"[VIC CLM] Offering continuation for '{last_topic}'")
+            # Add to history so we remember we offered
+            add_to_history(session_key, "assistant", response_text)
             return StreamingResponse(
                 stream_sse_response(response_text, str(uuid.uuid4())),
                 media_type="text/event-stream"
@@ -1590,6 +1647,10 @@ from Roman London to Victorian music halls. Would you like to hear about any par
             "validated": True,  # Pydantic validated!
         }
 
+        # CONVERSATION TRACKING: Record user query and set topic
+        add_to_history(session_key, "user", user_msg)
+        set_current_topic(session_key, teaser.title)
+
         # Store suggestion for "yes" handling - uses same key as get_last_suggestion
         set_last_suggestion(session_key, teaser.title)
         logger.info(f"[VIC Stage1] Stored last_suggestion='{teaser.title}' for session='{session_key}'")
@@ -1604,10 +1665,13 @@ from Roman London to Victorian music halls. Would you like to hear about any par
         logger.info(f"[VIC Stage1] Teaser response: {response_text[:80]}...")
         _last_request_debug["response"] = response_text
         _last_request_debug["session_key"] = session_key
-        # Store in history
+        # Store in debug history
         _debug_history.append(dict(_last_request_debug))
         if len(_debug_history) > 10:
             _debug_history.pop(0)
+
+        # CONVERSATION TRACKING: Record VIC's teaser response
+        add_to_history(session_key, "assistant", response_text)
 
         return StreamingResponse(
             stream_sse_response(response_text, str(uuid.uuid4())),
@@ -1629,6 +1693,13 @@ from Roman London to Victorian music halls. Would you like to hear about any par
         context = bg_data["content"]
         del _background_results[session_key]  # Clear after use
 
+        # CONVERSATION TRACKING: Record user's "yes" response
+        add_to_history(session_key, "user", user_msg)
+
+        # Get conversation history for context
+        history_context = get_history_context(session_key)
+        current_topic = get_current_topic(session_key)
+
         # Generate detailed response with pre-loaded content
         # Keep it SHORT for voice - 2-3 sentences max
         detailed_agent = Agent(
@@ -1637,12 +1708,16 @@ from Roman London to Victorian music halls. Would you like to hear about any par
             model_settings=ModelSettings(max_tokens=120, temperature=0.7),
         )
 
+        # Include history and topic context to prevent rambling
+        history_section = f"\n\nRECENT CONVERSATION:\n{history_context}" if history_context else ""
+        topic_anchor = f"\n\nCURRENT TOPIC: {current_topic}" if current_topic else ""
+
         prompt = f"""SOURCE MATERIAL:
-{context}
+{context}{topic_anchor}{history_section}
 
 USER QUESTION: {user_msg}
 
-CRITICAL: Keep response to 2-3 sentences MAX (~50 words). Share ONE interesting fact, then stop.
+CRITICAL: Stay focused on {current_topic if current_topic else 'the topic'}. Keep response to 2-3 sentences MAX (~50 words). Share ONE interesting fact, then stop.
 End with a brief question like "Would you like to know more about [specific aspect]?" """
 
         result = await detailed_agent.run(prompt)
@@ -1660,12 +1735,18 @@ End with a brief question like "Would you like to know more about [specific aspe
             response_text = truncated
             logger.info(f"[VIC Stage2] Truncated 'yes' response from {len(words)} to ~70 words")
 
+        # CONVERSATION TRACKING: Record VIC's detailed response
+        add_to_history(session_key, "assistant", response_text)
+
         return StreamingResponse(
             stream_sse_response(response_text, str(uuid.uuid4())),
             media_type="text/event-stream"
         )
 
-    # Full search fallback
+    # Full search fallback - add history tracking
+    # Track user message
+    add_to_history(session_key, "user", user_msg)
+
     try:
         results = await search_articles(normalized_query, limit=3)
 
@@ -1675,6 +1756,14 @@ End with a brief question like "Would you like to know more about [specific aspe
                 f"## {a.title}\n{a.content[:1500]}"
                 for a in results.articles[:2]
             ])
+
+            # Set current topic from top result
+            top_title = results.articles[0].title
+            set_current_topic(session_key, top_title)
+
+            # Get conversation history for context
+            history_context = get_history_context(session_key)
+            current_topic = get_current_topic(session_key)
 
             # Create deps with user context
             deps = VICDeps(
@@ -1696,13 +1785,17 @@ End with a brief question like "Would you like to know more about [specific aspe
                 model_settings=ModelSettings(max_tokens=120, temperature=0.7),
             )
 
+            # Include history and topic context to prevent rambling
+            history_section = f"\n\nRECENT CONVERSATION:\n{history_context}" if history_context else ""
+            topic_anchor = f"\n\nCURRENT TOPIC: {current_topic}" if current_topic else ""
+
             # Run the agent with context - SHORT for voice (faster TTS)
             prompt = f"""SOURCE MATERIAL:
-{context}
+{context}{topic_anchor}{history_section}
 
 USER QUESTION: {user_msg}
 
-REMEMBER: 2-3 sentences MAX. This is voice - be concise!"""
+CRITICAL: Stay focused on {current_topic if current_topic else 'the topic'}. 2-3 sentences MAX. This is voice - be concise!"""
 
             result = await temp_agent.run(prompt, deps=deps)
             response_text = result.output
@@ -1736,6 +1829,9 @@ REMEMBER: 2-3 sentences MAX. This is voice - be concise!"""
     except Exception as e:
         print(f"[VIC CLM] Error: {e}", file=sys.stderr)
         response_text = "I'm having a bit of trouble searching my records at the moment. Could you try asking again?"
+
+    # CONVERSATION TRACKING: Record VIC's response
+    add_to_history(session_key, "assistant", response_text)
 
     msg_id = str(uuid.uuid4())
     return StreamingResponse(

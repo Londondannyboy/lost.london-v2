@@ -15,6 +15,7 @@ import { LibrarianMessage, LibrarianThinking } from "@/components/LibrarianAvata
 import { CustomUserMessage, ChatUserContext } from "@/components/ChatMessages";
 import { DebugPanel } from "@/components/DebugPanel";
 import { RosieVoice } from "@/components/rosie-voice";
+import { ConfirmInterestFromTool } from "@/components/ConfirmInterest";
 import { useCallback, useEffect, useState } from "react";
 import { authClient } from "@/lib/auth/client";
 
@@ -566,27 +567,6 @@ export default function Home() {
 
       // TopicContext is rendered directly (it includes its own Librarian header)
       if (uiComponent === "TopicContext") {
-        // Store STRUCTURED topic to Zep with era/location (not just generic "London")
-        // This ensures dashboard shows "Royal Aquarium" not "interested in history"
-        if (user?.id && uiData?.query) {
-          const topicName = uiData.query;
-          const eraName = uiData?.era;
-          const locationName = typeof uiData?.location === 'string'
-            ? uiData.location
-            : uiData?.location?.name;
-
-          // Only store if it's a specific topic (not generic)
-          if (topicName && topicName.length > 3) {
-            storeTopicToZep(
-              user.id,
-              topicName,
-              userProfile.preferred_name,
-              eraName,
-              locationName
-            );
-          }
-        }
-
         // Set Rosie's articles to announce (for dual-voice prototype)
         if (uiData?.articles && uiData.articles.length > 0) {
           setRosieArticles({
@@ -600,6 +580,26 @@ export default function Home() {
           <>
             {/* Update hero background when topic has an image */}
             {uiData?.hero_image && <BackgroundUpdater imageUrl={uiData.hero_image} topic={uiData?.query} />}
+
+            {/* HITL: Confirm interest before storing to Zep */}
+            {user?.id && uiData?.query && uiData.query.length > 3 && (
+              <ConfirmInterestFromTool
+                result={{
+                  topic: uiData.query,
+                  era: uiData?.era,
+                  location: uiData?.location,
+                }}
+                userId={user.id}
+                userName={userProfile.preferred_name}
+                onConfirm={(interest) => {
+                  console.log("[HITL] User confirmed interest:", interest.topic);
+                }}
+                onSkip={() => {
+                  console.log("[HITL] User skipped interest");
+                }}
+              />
+            )}
+
             <TopicContext
               query={uiData?.query || ""}
               brief={uiData?.brief}
