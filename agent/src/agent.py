@@ -1643,16 +1643,22 @@ from Roman London to Victorian music halls. Would you like to hear about any par
     if is_affirmation:
         affirmation_key = session_id or "default"
         last_suggestion = get_last_suggestion(affirmation_key)
-        logger.info(f"[VIC CLM] Affirmation detected: '{normalized_lower}', session='{affirmation_key}', last_suggestion='{last_suggestion}'")
-        if last_suggestion:
-            logger.info(f"[VIC CLM] ⚡ 'Yes' to '{last_suggestion}' - skipping teaser, going to full response")
-            # Replace query with the suggested topic
-            normalized_query = last_suggestion
+        # FALLBACK: Also try current_topic as backup
+        current_topic_backup = get_current_topic(affirmation_key)
+        logger.info(f"[VIC CLM] Affirmation detected: '{normalized_lower}', session='{affirmation_key}', last_suggestion='{last_suggestion}', current_topic='{current_topic_backup}'")
+
+        # Use last_suggestion OR current_topic as fallback
+        topic_to_use = last_suggestion or current_topic_backup
+
+        if topic_to_use:
+            logger.info(f"[VIC CLM] ⚡ 'Yes' to '{topic_to_use}' - skipping teaser, going to full response")
+            # Replace query with the topic
+            normalized_query = topic_to_use
             # CRITICAL: Skip Stage 1 teaser - user already heard it, they want the FULL story now!
             skip_to_full_response = True
         else:
-            # No suggestion stored - ask what they want
-            logger.warning(f"[VIC CLM] No last_suggestion found for session='{affirmation_key}'")
+            # No suggestion or topic stored - ask what they want
+            logger.warning(f"[VIC CLM] No last_suggestion or current_topic found for session='{affirmation_key}'")
             response_text = "What would you like to hear about? I've got fascinating stories about Thorney Island, the Royal Aquarium, London's hidden rivers, and much more."
             return StreamingResponse(
                 stream_sse_response(response_text, str(uuid.uuid4())),
