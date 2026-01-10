@@ -212,19 +212,21 @@ curl https://vic-agent-production.up.railway.app/debug/last-request | jq
 - **Check:** `SmartAssistantMessage` only shows if `hasValidGenerativeUI`
 - **File:** `src/app/page.tsx` (line 42-121)
 
-### 5. Keyword Cache Incorrect Mappings (Jan 2026)
-- **Cause:** Some compound keywords map to wrong articles
-- **Example:** "fleet river" → "Tyburn river" (wrong!)
+### 5. Keyword Cache Incorrect Mappings (FIXED Jan 2026)
+- **Root cause:** LLM keyword extraction included generic words and incorrect cross-references
+- **Fix applied:**
+  1. Added `KEYWORD_STOPWORDS` filter in `load_keyword_cache()` (agent.py:1000-1010)
+  2. Removed incorrect "fleet river" from Tyburn article
+  3. Replaced generic keywords in Hidden Art Collection article
+- **Result:** "fleet river" now → "New rivers for old – Fleet and Walbrook" (correct!)
 - **Debug:** `curl https://vic-agent-production.up.railway.app/debug/search-keywords/fleet%20river`
-- **Fix needed:** Audit keyword cache, update mappings in database
 
-### 6. "Hidden Art Collection" Article Contamination
-- **Cause:** Article matches too many generic search terms
-- **Symptoms:** Appears in unrelated topic searches, causes topic drift
-- **Fix options:**
-  - Reduce keyword specificity for this article
-  - Add negative keywords to exclude from certain contexts
-  - Increase topic anchor strength in prompts
+### 6. "Hidden Art Collection" Article Contamination (FIXED Jan 2026)
+- **Root cause:** Article had keywords ["with", "what", "hidden", "collection"] - too generic!
+- **Fix applied:** Replaced with specific keywords:
+  - 'government art collection', 'gac', 'hidden art', 'london art treasures'
+  - 'art storage', 'embassy art', 'lowry buckingham palace', 'lord byron painting'
+- **Result:** No longer appears in unrelated searches
 
 ---
 
