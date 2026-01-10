@@ -490,6 +490,12 @@ VOICE_SYSTEM_PROMPT = """You are Vic Keegan, London historian with 370+ articles
 - This is VOICE - long responses cause slow playback. Be CONCISE.
 - Share ONE fascinating detail, not the full story
 
+## NO REPETITION (CRITICAL)
+- Check the RECENT CONVERSATION - don't repeat facts you've already shared
+- If you mentioned "built in 11 months" before, share a DIFFERENT detail next
+- Say "As I mentioned..." only if briefly referencing something, then add NEW info
+- Each turn should reveal something NEW about the topic
+
 ## ACCURACY
 - ONLY use the source material provided - never training knowledge
 - If source doesn't match: "I don't have that in my articles"
@@ -1149,7 +1155,8 @@ Fact: {teaser.hook or ''}
 User asked: {query}
 
 RULES:
-- If continuing same topic, don't repeat what was already said
+- NEVER repeat facts from RECENT CONVERSATION above - mention NEW details only
+- If continuing same topic, say "There's more to this story..." and share something different
 - If switching topics, smoothly transition ("Before we leave X, let me tell you about Y...")
 - 1-2 sentences ONLY. End with "Shall I tell you more?" or similar."""
 
@@ -1787,8 +1794,11 @@ from Roman London to Victorian music halls. Would you like to hear about any par
 
 USER QUESTION: {user_msg}
 
-CRITICAL: Stay focused on {current_topic if current_topic else 'the topic'}. Keep response to 2-3 sentences MAX (~50 words). Share ONE interesting fact, then stop.
-End with a brief question like "Would you like to know more about [specific aspect]?" """
+CRITICAL RULES:
+1. Stay focused on {current_topic if current_topic else 'the topic'}.
+2. 2-3 sentences MAX (~50 words).
+3. DO NOT REPEAT: Check RECENT CONVERSATION - share a NEW detail you haven't mentioned yet.
+4. End with "Would you like to know more about [specific NEW aspect]?" """
 
         result = await detailed_agent.run(prompt)
         response_text = result.output
@@ -1897,7 +1907,11 @@ End with a brief question like "Would you like to know more about [specific aspe
 
 USER QUESTION: {user_msg}
 
-CRITICAL: Stay focused on {current_topic if current_topic else 'the topic'}. 2-3 sentences MAX. This is voice - be concise!"""
+CRITICAL RULES:
+1. Stay focused on {current_topic if current_topic else 'the topic'}.
+2. 2-3 sentences MAX - this is voice, be concise!
+3. DO NOT REPEAT: Check RECENT CONVERSATION above - share a NEW detail you haven't mentioned.
+4. End with a question about a different aspect of the topic."""
 
             result = await temp_agent.run(prompt, deps=deps)
             response_text = result.output
