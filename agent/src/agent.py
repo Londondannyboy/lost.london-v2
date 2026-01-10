@@ -1767,8 +1767,28 @@ End with a brief question like "Would you like to know more about [specific aspe
     # Track user message
     add_to_history(session_key, "user", user_msg)
 
+    # CONTEXT ENRICHMENT: If query is a vague follow-up, prepend current topic
+    # This fixes "What happened to it?" → "Royal Aquarium What happened to it?"
+    current_topic_for_search = get_current_topic(session_key)
+    search_query = normalized_query
+
+    if current_topic_for_search:
+        # Detect vague follow-up questions (pronouns, no specific topic mentioned)
+        vague_indicators = ['it', 'that', 'this', 'there', 'they', 'them', 'its']
+        query_words = normalized_query.lower().split()
+        is_vague_followup = (
+            any(word in vague_indicators for word in query_words) or
+            normalized_query.lower().startswith(('what ', 'where ', 'when ', 'why ', 'how ', 'who ')) and
+            len(query_words) < 6  # Short questions are likely follow-ups
+        )
+
+        if is_vague_followup:
+            # Prepend topic to search query for better results
+            search_query = f"{current_topic_for_search} {normalized_query}"
+            logger.info(f"[VIC Stage2] Enriched search query: '{normalized_query}' → '{search_query}'")
+
     try:
-        results = await search_articles(normalized_query, limit=3)
+        results = await search_articles(search_query, limit=3)
 
         if results.articles:
             # Build context from articles
@@ -1777,13 +1797,18 @@ End with a brief question like "Would you like to know more about [specific aspe
                 for a in results.articles[:2]
             ])
 
-            # Set current topic from top result
+            # Only set topic from search results if it's a NEW topic (not a follow-up)
+            # This prevents "What happened to it?" from changing topic from Royal Aquarium
             top_title = results.articles[0].title
-            set_current_topic(session_key, top_title)
+            if not current_topic_for_search:
+                # No existing topic - set from search results
+                set_current_topic(session_key, top_title)
+                logger.info(f"[VIC Stage2] Set new topic: {top_title}")
+            # else: keep existing topic (user is asking follow-up about it)
 
             # Get conversation history for context
             history_context = get_history_context(session_key)
-            current_topic = get_current_topic(session_key)
+            current_topic = get_current_topic(session_key) or top_title
 
             # Create deps with user context
             deps = VICDeps(
