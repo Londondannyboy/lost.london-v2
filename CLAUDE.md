@@ -147,6 +147,40 @@ curl https://vic-agent-production.up.railway.app/debug/full | jq '.session_state
 curl https://vic-agent-production.up.railway.app/debug/last-request | jq
 ```
 
+### Anti-Repetition Pattern (Jan 2026)
+
+**Problem Solved:** VIC was repeating the same facts across turns. User asks about Royal Aquarium → VIC says "built in 11 months" → User says "yes" → VIC says "built in 11 months" again.
+
+**Root Cause:** Conversation history was included in prompts but without explicit instruction not to repeat content.
+
+**Fix Applied:** Three-layer anti-repetition:
+
+1. **VOICE_SYSTEM_PROMPT** (agent.py:493-497):
+```
+## NO REPETITION (CRITICAL)
+- Check the RECENT CONVERSATION - don't repeat facts you've already shared
+- If you mentioned "built in 11 months" before, share a DIFFERENT detail next
+- Say "As I mentioned..." only if briefly referencing, then add NEW info
+- Each turn should reveal something NEW about the topic
+```
+
+2. **Stage 2 Prompts** (agent.py:1796-1800, 1909-1913):
+```
+CRITICAL RULES:
+1. Stay focused on {topic}.
+2. 2-3 sentences MAX.
+3. DO NOT REPEAT: Check RECENT CONVERSATION - share a NEW detail you haven't mentioned.
+4. End with a question about a different aspect.
+```
+
+3. **Teaser Generation** (agent.py:1157-1158):
+```
+- NEVER repeat facts from RECENT CONVERSATION above - mention NEW details only
+- If continuing same topic, say "There's more to this story..." and share something different
+```
+
+**Result:** VIC now progresses through topic content instead of looping.
+
 ---
 
 ## Key Files
