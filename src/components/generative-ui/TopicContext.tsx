@@ -10,6 +10,7 @@ interface Article {
   title: string;
   excerpt: string;
   hero_image_url?: string | null;
+  slug?: string;  // URL slug for lost.london links
   score?: number;
   location?: {
     name: string;
@@ -142,7 +143,7 @@ export function TopicContext({
             title={articles[0].title}
             excerpt={articles[0].excerpt}
             hero_image_url={articles[0].hero_image_url}
-            slug={articles[0].id}
+            slug={articles[0].slug || articles[0].id}
             score={articles[0].score}
             location={articles[0].location?.name}
             date_range={articles[0].era || undefined}
@@ -159,7 +160,7 @@ export function TopicContext({
                   title={article.title}
                   excerpt={article.excerpt}
                   hero_image_url={article.hero_image_url}
-                  slug={article.id}
+                  slug={article.slug || article.id}
                   score={article.score}
                   location={article.location?.name}
                   date_range={article.era || undefined}

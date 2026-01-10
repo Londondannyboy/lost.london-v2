@@ -2339,6 +2339,7 @@ In this chat, keep it SHORT:
                     "title": article.title,
                     "excerpt": article.content[:200] + "...",
                     "hero_image_url": img_url,
+                    "slug": article.slug or article.id,  # Use slug for lost.london links
                     "score": article.score,
                     "location": location.model_dump() if location else None,
                     "era": era,

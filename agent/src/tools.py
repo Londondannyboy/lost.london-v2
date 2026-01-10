@@ -177,6 +177,7 @@ async def search_articles(query: str, limit: int = 5) -> SearchResults:
             content=r["content"],
             score=r["score"],
             hero_image_url=r.get("hero_image_url"),
+            slug=r.get("slug"),  # Pass slug from database for article links
         )
         for r in results
     ]
