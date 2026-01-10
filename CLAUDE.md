@@ -46,6 +46,109 @@ Full RRF search → Load articles → Zep memory → Detailed response ready for
 
 ---
 
+## Two-Stage Contextual Anchoring (Jan 2026)
+
+**Problem Solved:** VIC was "rambling" - going off-topic after 2-3 turns. User says "Royal Aquarium" → VIC responds → User says "yes" → VIC talks about Jack Sheppard (unrelated).
+
+**Root Cause:** Stage 1 teaser generation had ZERO conversation context. History infrastructure existed but wasn't wired in.
+
+### The TSCA Pattern (Two-Stage Contextual Anchoring)
+
+Based on the article "Contextual Anchoring" - giving the model a compact interpretation frame before asking it to do work:
+
+```
+ANCHOR = Role + Scenario + Output Format + Topic Context + History
+
+Stage 1 Prompt:
+  PREVIOUSLY DISCUSSING: {previous_topic}
+  RECENT CONVERSATION:
+  {last 3 exchanges}
+
+  NOW DISCUSSING: {teaser.title}
+  Location: {location}
+  Era: {era}
+  Fact: {hook}
+
+  User asked: {query}
+
+  RULES:
+  - If continuing same topic, don't repeat what was already said
+  - 1-2 sentences ONLY. End with "Shall I tell you more?"
+```
+
+### Key Implementation Details
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| `SessionContext.conversation_history` | agent.py:125 | Stores last 4 turns as [(role, text), ...] |
+| `SessionContext.current_topic_context` | agent.py:126 | "Currently discussing: Royal Aquarium" |
+| `add_to_history()` | agent.py:151 | Adds exchange, truncates to 200 chars |
+| `get_history_context()` | agent.py:163 | Formats last 6 messages for prompt |
+| `set_current_topic()` | agent.py:180 | Updates topic anchor |
+| `generate_fast_teaser()` | agent.py:1109 | Now includes session_key for context |
+
+### Vague Follow-up Detection
+
+Prevents "What happened to it?" from triggering a new Stage 1 teaser search:
+
+```python
+# Strip punctuation! "it?" != "it"
+query_words_clean = [w.strip(string.punctuation).lower() for w in query.split()]
+vague_indicators = ['it', 'that', 'this', 'there', 'they', 'them', 'its', 'the']
+
+is_vague_followup = (
+    any(word in vague_indicators for word in query_words_clean) and
+    len(query_words_clean) < 8 and
+    not any(word in query.lower() for word in existing_topic.lower().split()[:3])
+)
+
+if is_vague_followup:
+    skip Stage 1 → go to Stage 2 with topic-enriched search
+```
+
+### Search Query Enrichment
+
+When user asks vague follow-up, prepend topic to search:
+- "What happened to it?" → "Royal Aquarium What happened to it?"
+- "Where was that?" → "Tyburn Where was that?"
+
+### Test Results (5-Turn Conversation)
+
+| Turn | Query | Before Fix | After Fix |
+|------|-------|------------|-----------|
+| 1 | "Royal Aquarium" | ✅ Royal Aquarium | ✅ Royal Aquarium |
+| 2 | "yes" | ✅ Royal Aquarium | ✅ Royal Aquarium |
+| 3 | "what happened to it?" | ❌ Art Collection | ✅ Royal Aquarium (closed 1903) |
+| 4 | "where was it located?" | ❌ Whitehall | ✅ Royal Aquarium (Parliament Sq) |
+| 5 | "tell me more" | ❌ GAC | ✅ Royal Aquarium (performers) |
+
+**Score: 3.5/10 → 8.25/10**
+
+### Critical Bug Fixed
+
+```python
+# BUG: "it?" != "it" (punctuation included)
+query_words = normalized_query.split()  # ['what', 'happened', 'to', 'it?']
+'it' in query_words  # False!
+
+# FIX: Strip punctuation
+import string
+query_words_clean = [w.strip(string.punctuation) for w in query.split()]
+'it' in query_words_clean  # True!
+```
+
+### Debug Endpoints
+
+```bash
+# Check session state
+curl https://vic-agent-production.up.railway.app/debug/full | jq '.session_states'
+
+# Check last request (shows stage, topic, enriched query)
+curl https://vic-agent-production.up.railway.app/debug/last-request | jq
+```
+
+---
+
 ## Key Files
 
 ### Backend (`agent/src/`)
@@ -75,6 +178,8 @@ Full RRF search → Load articles → Zep memory → Detailed response ready for
 | Simplified delegate_to_librarian | ✅ | Direct search, no agent overhead |
 | Zep Memory Quality | ✅ | Stores structured topic entities |
 | Book Sections Removed | ✅ | Cleaner homepage |
+| **Context Anchoring (Anti-Ramble)** | ✅ | TSCA pattern, 5-turn conversations stay on topic |
+| **Vague Follow-up Detection** | ✅ | "What happened to it?" → enriched search |
 | Dynamic Background | ⚠️ | Code exists, needs testing |
 | Timeline Display | ⚠️ | Data returned, UI may not render |
 | Images in ArticleCards | ⚠️ | Data returned, verify rendering |

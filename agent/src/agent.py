@@ -1797,11 +1797,13 @@ End with a brief question like "Would you like to know more about [specific aspe
     if current_topic_for_search:
         # Detect vague follow-up questions (pronouns, no specific topic mentioned)
         vague_indicators = ['it', 'that', 'this', 'there', 'they', 'them', 'its']
-        query_words = normalized_query.lower().split()
+        # Strip punctuation from query words for accurate matching (same fix as Stage 1)
+        import string
+        query_words_clean = [w.strip(string.punctuation).lower() for w in normalized_query.split()]
         is_vague_followup = (
-            any(word in vague_indicators for word in query_words) or
+            any(word in vague_indicators for word in query_words_clean) or
             normalized_query.lower().startswith(('what ', 'where ', 'when ', 'why ', 'how ', 'who ')) and
-            len(query_words) < 6  # Short questions are likely follow-ups
+            len(query_words_clean) < 6  # Short questions are likely follow-ups
         )
 
         if is_vague_followup:
