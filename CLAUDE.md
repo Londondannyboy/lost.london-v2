@@ -212,6 +212,20 @@ curl https://vic-agent-production.up.railway.app/debug/last-request | jq
 - **Check:** `SmartAssistantMessage` only shows if `hasValidGenerativeUI`
 - **File:** `src/app/page.tsx` (line 42-121)
 
+### 5. Keyword Cache Incorrect Mappings (Jan 2026)
+- **Cause:** Some compound keywords map to wrong articles
+- **Example:** "fleet river" → "Tyburn river" (wrong!)
+- **Debug:** `curl https://vic-agent-production.up.railway.app/debug/search-keywords/fleet%20river`
+- **Fix needed:** Audit keyword cache, update mappings in database
+
+### 6. "Hidden Art Collection" Article Contamination
+- **Cause:** Article matches too many generic search terms
+- **Symptoms:** Appears in unrelated topic searches, causes topic drift
+- **Fix options:**
+  - Reduce keyword specificity for this article
+  - Add negative keywords to exclude from certain contexts
+  - Increase topic anchor strength in prompts
+
 ---
 
 ## Database
