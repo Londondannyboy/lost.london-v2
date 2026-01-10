@@ -16,7 +16,7 @@ import { CustomUserMessage, ChatUserContext } from "@/components/ChatMessages";
 import { DebugPanel } from "@/components/DebugPanel";
 import { RosieVoice } from "@/components/rosie-voice";
 import { ConfirmInterestFromTool } from "@/components/ConfirmInterest";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { authClient } from "@/lib/auth/client";
 
 // Hook to detect mobile viewport
@@ -401,9 +401,14 @@ export default function Home() {
     initialState: { user: undefined },
   });
 
+  // Track if we've already synced to prevent loops
+  const hasSyncedRef = useRef(false);
+
   // Sync logged-in user to agent state and store profile to Zep
+  // FIXED: Removed setAgentState from deps and added ref to prevent infinite loops
   useEffect(() => {
-    if (user?.id && !agentState?.user?.id) {
+    if (user?.id && !hasSyncedRef.current) {
+      hasSyncedRef.current = true;
       const userInfo = {
         id: user.id,
         name: userName || user.name || 'Unknown',
@@ -418,7 +423,7 @@ export default function Home() {
         storeUserProfileToZep(user.id, displayName);
       }
     }
-  }, [user?.id, user?.name, user?.email, userName, agentState?.user?.id, setAgentState]);
+  }, [user?.id, user?.name, user?.email, userName, setAgentState]);
 
   // Handle voice messages
   // IMPORTANT: Only forward USER messages to CopilotKit to trigger tools
