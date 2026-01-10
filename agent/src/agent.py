@@ -1653,8 +1653,24 @@ from Roman London to Victorian music halls. Would you like to hear about any par
     # This ensures "yes" handling can find the last suggestion
     session_key = session_id or "default"
 
-    # Only do teaser if NOT an affirmation (user saying "yes" wants full story)
-    teaser = None if skip_to_full_response else get_teaser_from_cache(normalized_query)
+    # Check if this is a vague follow-up that should skip Stage 1
+    # "Where was it?" with existing topic → go to Stage 2 with enriched search
+    existing_topic = get_current_topic(session_key)
+    is_vague_followup = False
+
+    if existing_topic and not skip_to_full_response:
+        vague_indicators = ['it', 'that', 'this', 'there', 'they', 'them', 'its', 'the']
+        query_words = normalized_query.lower().split()
+        is_vague_followup = (
+            any(word in vague_indicators for word in query_words) and
+            len(query_words) < 8 and  # Short questions
+            not any(word in normalized_query.lower() for word in existing_topic.lower().split()[:3])  # Topic not mentioned
+        )
+        if is_vague_followup:
+            logger.info(f"[VIC Stage1] Skipping cache - vague follow-up detected: '{normalized_query}' (topic: {existing_topic})")
+
+    # Only do teaser if NOT an affirmation AND NOT a vague follow-up
+    teaser = None if (skip_to_full_response or is_vague_followup) else get_teaser_from_cache(normalized_query)
 
     if teaser:
         logger.info(f"[VIC Stage1] FAST MATCH: '{teaser.title}' for query '{normalized_query}'")
