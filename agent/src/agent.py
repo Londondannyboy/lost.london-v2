@@ -1630,11 +1630,20 @@ from Roman London to Victorian music halls. Would you like to hear about any par
         "let's do it", "let's hear it", "why not", "i'm interested", "please do",
     }
 
-    # Check if this is a pure affirmation
+    # HUME FIX: Strip emotion annotations like "{very slightly calm, satisfied}"
+    # Hume sends: "Yes. {very slightly calm, very slightly satisfied}"
+    import re
+    text_without_emotions = re.sub(r'\s*\{[^}]*\}', '', normalized_lower).strip()
+    # Also strip trailing punctuation for matching: "yes." -> "yes"
+    text_clean = text_without_emotions.rstrip('.,!?').strip()
+
+    logger.info(f"[VIC CLM] Affirmation check: original='{normalized_lower[:50]}', clean='{text_clean}'")
+
+    # Check if this is a pure affirmation (use cleaned text)
     is_affirmation = (
-        normalized_lower in AFFIRMATION_WORDS or
-        normalized_lower in AFFIRMATION_PHRASES or
-        any(phrase in normalized_lower for phrase in AFFIRMATION_PHRASES)
+        text_clean in AFFIRMATION_WORDS or
+        text_clean in AFFIRMATION_PHRASES or
+        any(phrase in text_clean for phrase in AFFIRMATION_PHRASES)
     )
 
     # Flag to skip Stage 1 teaser and go directly to full response
