@@ -1660,10 +1660,12 @@ from Roman London to Victorian music halls. Would you like to hear about any par
 
     if existing_topic and not skip_to_full_response:
         vague_indicators = ['it', 'that', 'this', 'there', 'they', 'them', 'its', 'the']
-        query_words = normalized_query.lower().split()
+        # Strip punctuation from query words for accurate matching
+        import string
+        query_words_clean = [w.strip(string.punctuation).lower() for w in normalized_query.split()]
         is_vague_followup = (
-            any(word in vague_indicators for word in query_words) and
-            len(query_words) < 8 and  # Short questions
+            any(word in vague_indicators for word in query_words_clean) and
+            len(query_words_clean) < 8 and  # Short questions
             not any(word in normalized_query.lower() for word in existing_topic.lower().split()[:3])  # Topic not mentioned
         )
         if is_vague_followup:
