@@ -1106,20 +1106,40 @@ Rules:
     return _fast_teaser_agent
 
 
-async def generate_fast_teaser(teaser: TeaserData, query: str) -> str:
-    """Generate instant teaser response (~200ms)."""
-    prompt = f"""Topic: {teaser.title}
+async def generate_fast_teaser(teaser: TeaserData, query: str, session_key: str = "default") -> str:
+    """Generate instant teaser response with context anchoring (~200ms).
+
+    TSCE Pattern: Include conversation history and topic context as "anchor"
+    so VIC stays on topic across turns.
+    """
+    # Get conversation anchor (prevents rambling/topic drift)
+    history_context = get_history_context(session_key)
+    previous_topic = get_current_topic(session_key)
+
+    # Build context anchor
+    anchor = ""
+    if previous_topic and previous_topic.lower() != teaser.title.lower():
+        # User is switching topics - acknowledge the transition
+        anchor += f"PREVIOUSLY DISCUSSING: {previous_topic}\n"
+    if history_context:
+        anchor += f"RECENT CONVERSATION:\n{history_context}\n\n"
+
+    prompt = f"""{anchor}NOW DISCUSSING: {teaser.title}
 Location: {teaser.location or 'London'}
 Era: {teaser.era or ''}
-Interesting fact: {teaser.hook or ''}
+Fact: {teaser.hook or ''}
 
-User asked about: {query}
+User asked: {query}
 
-Give a brief, engaging teaser (1-2 sentences). End with a follow-up question."""
+RULES:
+- If continuing same topic, don't repeat what was already said
+- If switching topics, smoothly transition ("Before we leave X, let me tell you about Y...")
+- 1-2 sentences ONLY. End with "Shall I tell you more?" or similar."""
 
     try:
         agent = get_fast_teaser_agent()
         result = await agent.run(prompt)
+        logger.info(f"[VIC Teaser] Generated with anchor: prev_topic={previous_topic}, history_len={len(history_context)}")
         return result.output
     except Exception as e:
         logger.error(f"[VIC Teaser] Error: {e}")
@@ -1659,8 +1679,8 @@ from Roman London to Victorian music halls. Would you like to hear about any par
         import asyncio
         asyncio.create_task(load_full_article_background(normalized_query, session_key))
 
-        # Generate instant teaser response (~200ms)
-        response_text = await generate_fast_teaser(teaser, user_msg)
+        # Generate instant teaser response with context anchoring (~200ms)
+        response_text = await generate_fast_teaser(teaser, user_msg, session_key)
 
         logger.info(f"[VIC Stage1] Teaser response: {response_text[:80]}...")
         _last_request_debug["response"] = response_text
