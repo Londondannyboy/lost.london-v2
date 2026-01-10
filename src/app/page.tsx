@@ -613,6 +613,14 @@ export default function Home() {
               era={uiData?.era}
               timeline_events={uiData?.timeline_events}
               hero_image={uiData?.hero_image}
+              onTimelineEventClick={(event) => {
+                const message = `Tell me about ${event.title} in ${event.year}`;
+                appendMessage(new TextMessage({ content: message, role: Role.User }));
+              }}
+              onArticleClick={(article) => {
+                const message = `Tell me more about ${article.title}`;
+                appendMessage(new TextMessage({ content: message, role: Role.User }));
+              }}
             />
           </>
         );

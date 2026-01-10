@@ -40,6 +40,8 @@ interface TopicContextProps {
   era?: string;
   timeline_events?: TimelineEvent[];
   hero_image?: string;
+  onTimelineEventClick?: (event: TimelineEvent) => void;
+  onArticleClick?: (article: Article) => void;
 }
 
 /**
@@ -54,6 +56,8 @@ export function TopicContext({
   era,
   timeline_events,
   hero_image,
+  onTimelineEventClick,
+  onArticleClick,
 }: TopicContextProps) {
   const [showAllArticles, setShowAllArticles] = useState(false);
 
@@ -109,7 +113,7 @@ export function TopicContext({
             </svg>
             <span className="text-sm font-semibold text-amber-800">{timelineEra}</span>
           </div>
-          <Timeline era={timelineEra} events={timeline_events} />
+          <Timeline era={timelineEra} events={timeline_events} onEventClick={onTimelineEventClick} />
         </div>
       )}
 
