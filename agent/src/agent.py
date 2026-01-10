@@ -1780,12 +1780,16 @@ End with a brief question like "Would you like to know more about [specific aspe
         )
 
     # Full search fallback - add history tracking
+    _last_request_debug["stage"] = "Stage2-FullSearch"
+    _last_request_debug["session_key"] = session_key  # Track session for debugging
+
     # Track user message
     add_to_history(session_key, "user", user_msg)
 
     # CONTEXT ENRICHMENT: If query is a vague follow-up, prepend current topic
     # This fixes "What happened to it?" → "Royal Aquarium What happened to it?"
     current_topic_for_search = get_current_topic(session_key)
+    _last_request_debug["current_topic_for_search"] = current_topic_for_search  # Track for debugging
     search_query = normalized_query
 
     if current_topic_for_search:
@@ -1802,6 +1806,7 @@ End with a brief question like "Would you like to know more about [specific aspe
             # Prepend topic to search query for better results
             search_query = f"{current_topic_for_search} {normalized_query}"
             logger.info(f"[VIC Stage2] Enriched search query: '{normalized_query}' → '{search_query}'")
+            _last_request_debug["enriched_search_query"] = search_query  # Track enrichment
 
     try:
         results = await search_articles(search_query, limit=3)
@@ -2448,6 +2453,8 @@ async def debug_full():
             "turns_since_name_used": ctx.turns_since_name_used,
             "greeted_this_session": ctx.greeted_this_session,
             "last_topic": ctx.last_topic,
+            "current_topic_context": ctx.current_topic_context,  # ADDED
+            "conversation_history": ctx.conversation_history[-6:],  # ADDED - last 3 exchanges
             "user_name": ctx.user_name,
             "context_fetched": ctx.context_fetched,
             "prefetched_topic": ctx.prefetched_topic,
