@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
 interface LocationMapProps {
   location: {
@@ -12,24 +12,13 @@ interface LocationMapProps {
 }
 
 export function LocationMap({ location }: LocationMapProps) {
-  const [iframeLoaded, setIframeLoaded] = useState(false);
-  const [iframeError, setIframeError] = useState(false);
-  const [showFallback, setShowFallback] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageError, setImageError] = useState(false);
 
-  // Timeout to show fallback if iframe doesn't load
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (!iframeLoaded) {
-        setShowFallback(true);
-      }
-    }, 3000); // 3 seconds timeout
-    return () => clearTimeout(timer);
-  }, [iframeLoaded]);
+  // Static map image from OpenStreetMap (more reliable than iframe which gets blocked)
+  const staticMapUrl = `https://staticmap.openstreetmap.de/staticmap.php?center=${location.lat},${location.lng}&zoom=15&size=400x200&markers=${location.lat},${location.lng},red-pushpin`;
 
-  // OpenStreetMap embed URL
-  const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${location.lng - 0.008},${location.lat - 0.005},${location.lng + 0.008},${location.lat + 0.005}&layer=mapnik&marker=${location.lat},${location.lng}`;
-
-  // Google Maps link as primary fallback (always works)
+  // Google Maps link as primary interactive option
   const googleMapsUrl = `https://www.google.com/maps?q=${location.lat},${location.lng}&z=16`;
 
   // OpenStreetMap link
@@ -37,65 +26,50 @@ export function LocationMap({ location }: LocationMapProps) {
 
   return (
     <div className="rounded-lg overflow-hidden border border-blue-200 bg-blue-50">
-      {/* Map container */}
-      <div className="h-48 w-full relative">
-        {/* Loading/fallback placeholder - always visible until iframe loads */}
-        {!iframeLoaded && !iframeError && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-blue-100 to-blue-200 animate-pulse">
+      {/* Map container - clickable to open in Google Maps */}
+      <a
+        href={googleMapsUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="block h-48 w-full relative group cursor-pointer"
+      >
+        {/* Loading placeholder */}
+        {!imageLoaded && !imageError && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-blue-100 to-blue-200">
             <svg className="w-12 h-12 text-blue-400 mb-2" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
             </svg>
-            <span className="text-sm text-blue-600">Loading map...</span>
+            <span className="text-sm text-blue-600">{location.name}</span>
           </div>
         )}
 
-        {/* Error/fallback state - styled placeholder with links */}
-        {(iframeError || showFallback) && (
+        {/* Error fallback - show styled placeholder */}
+        {imageError && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-blue-100 via-blue-50 to-cyan-100">
-            <div className="bg-white/80 rounded-lg p-4 text-center shadow-sm">
-              <svg className="w-10 h-10 text-blue-500 mx-auto mb-2" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
-              </svg>
-              <h4 className="font-semibold text-blue-800 mb-1">{location.name}</h4>
-              <p className="text-xs text-blue-600 mb-3">
-                {location.lat.toFixed(4)}, {location.lng.toFixed(4)}
-              </p>
-              <div className="flex gap-2 justify-center">
-                <a
-                  href={googleMapsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs bg-blue-500 text-white px-3 py-1.5 rounded hover:bg-blue-600 transition-colors"
-                >
-                  Google Maps
-                </a>
-                <a
-                  href={osmUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs bg-white text-blue-600 px-3 py-1.5 rounded border border-blue-300 hover:bg-blue-50 transition-colors"
-                >
-                  OpenStreetMap
-                </a>
-              </div>
-            </div>
+            <svg className="w-10 h-10 text-blue-500 mb-2" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+            </svg>
+            <h4 className="font-semibold text-blue-800 mb-1">{location.name}</h4>
+            <p className="text-xs text-blue-600">{location.lat.toFixed(4)}, {location.lng.toFixed(4)}</p>
           </div>
         )}
 
-        {/* OpenStreetMap iframe */}
-        {!iframeError && (
-          <iframe
-            src={mapUrl}
-            width="100%"
-            height="100%"
-            style={{ border: 0, opacity: iframeLoaded ? 1 : 0 }}
-            loading="lazy"
-            title={`Map of ${location.name}`}
-            onLoad={() => setIframeLoaded(true)}
-            onError={() => setIframeError(true)}
-          />
-        )}
-      </div>
+        {/* Static map image */}
+        <img
+          src={staticMapUrl}
+          alt={`Map of ${location.name}`}
+          className={`w-full h-full object-cover transition-opacity duration-300 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
+          onLoad={() => setImageLoaded(true)}
+          onError={() => setImageError(true)}
+        />
+
+        {/* Hover overlay */}
+        <div className="absolute inset-0 bg-blue-900/0 group-hover:bg-blue-900/20 transition-colors duration-200 flex items-center justify-center">
+          <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white/90 px-3 py-1.5 rounded-lg text-sm font-medium text-blue-800 shadow-lg">
+            Open in Maps
+          </span>
+        </div>
+      </a>
 
       {/* Location info bar */}
       <div className="p-2 bg-blue-50 flex items-center justify-between border-t border-blue-100">
