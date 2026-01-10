@@ -73,6 +73,7 @@ export function LocationMap({ location }: LocationMapProps) {
         )}
 
         {/* OpenStreetMap iframe - works well on most browsers */}
+        {/* pointer-events: none allows clicks to pass through to parent <a> tag */}
         {!imageError && (
           <iframe
             src={osmStaticUrl}
@@ -81,7 +82,8 @@ export function LocationMap({ location }: LocationMapProps) {
             style={{
               border: 0,
               opacity: imageLoaded ? 1 : 0,
-              filter: 'sepia(20%) saturate(110%)'  // Slight vintage look
+              filter: 'sepia(20%) saturate(110%)',  // Slight vintage look
+              pointerEvents: 'none'  // Allow clicks to pass through to parent link
             }}
             loading="lazy"
             title={`Map of ${location.name}`}

@@ -213,6 +213,25 @@ CRITICAL RULES:
 - Multi-turn success: **100%** vs industry 35%
 - Context retention: **100%** vs typical 58%
 
+### Comparison to Other Conversational AI
+
+| App | Type | Multi-Turn | Memory | Voice | Domain Knowledge |
+|-----|------|------------|--------|-------|------------------|
+| **VIC (Lost London)** | Voice-first historian | 100% context | Zep knowledge graph | Hume EVI | 372 articles, 4,748 keywords |
+| CopilotKit Travel Planner | Form-based assistant | Session-based | None persisted | No | User-provided preferences |
+| CopilotKit Form Filler | Form completion | Single-flow | None | No | Form schema only |
+| CopilotKit Research Canvas | Document assistant | Session-based | None | No | User documents |
+| fractional.quest | Job board (no AI chat) | N/A | N/A | No | Job listings |
+| esportsjobs.quest | Job board (no AI chat) | N/A | N/A | No | Job listings |
+
+**VIC's Unique Capabilities:**
+1. **Two-Stage Voice Architecture**: Instant teaser (< 700ms) + background loading
+2. **Keyword Cache**: 4,748 phonetic keywords for instant topic matching
+3. **TSCA Pattern**: Context anchoring across 5+ conversation turns
+4. **Anti-Repetition**: Each turn reveals NEW facts, never repeats
+5. **Zep Memory**: Remembers users across sessions (names, topics, interests)
+6. **Domain Expert**: 372 curated articles, not just RAG over docs
+
 ### Before vs After Comparison
 
 | Dimension | Before (Jan 8) | After (Jan 10) | Improvement |

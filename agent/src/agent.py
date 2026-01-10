@@ -270,8 +270,46 @@ def generate_returning_user_greeting(
     """
     Generate a personalized greeting for returning users.
     Uses variations to avoid repetition.
+    Special greetings for the Keegan family!
     """
     name = user_name or ""
+    name_lower = name.lower().strip() if name else ""
+
+    # Special greetings for the Keegan family
+    if name_lower == "vic":
+        # Vic Keegan - the creator, VIC's namesake - brother from another mother!
+        if recent_topics:
+            topic = recent_topics[0]
+            vic_greetings = [
+                f"Vic! My brother from another mother! Last time we were deep into {topic}. Shall we continue our exploration, or has something else caught your eye?",
+                f"Ah, Vic - the original! Good to hear from you, brother. We were discussing {topic}. Pick up where we left off?",
+                f"Welcome back, Vic! My namesake and brother from another mother. I remember we talked about {topic}. More of that, or something new?",
+            ]
+        else:
+            vic_greetings = [
+                "Vic! My brother from another mother! What corner of our beloved London shall we explore today?",
+                "Ah, the original Vic! Good to hear from you, brother. What would you like to discover?",
+                "Welcome back, Vic - my namesake and brother from another mother. What's on your mind?",
+            ]
+        return random.choice(vic_greetings)
+
+    if name_lower == "dan":
+        # Dan Keegan - son of Vic, the developer
+        if recent_topics:
+            topic = recent_topics[0]
+            dan_greetings = [
+                f"Dan, son of Vic! Welcome back. Last time we were exploring {topic}. Shall we continue, or discover something new?",
+                f"Ah, Dan - son of Vic! Good to hear from you. We were chatting about {topic}. More of that?",
+                f"Hello again, Dan, son of Vic! I remember we discussed {topic}. Shall we dive deeper?",
+            ]
+        else:
+            dan_greetings = [
+                "Dan, son of Vic! Welcome back. What would you like to discover about hidden London today?",
+                "Ah, Dan - son of Vic! What corner of London's history shall we explore?",
+                "Hello again, Dan, son of Vic! I've got 372 articles waiting. What catches your fancy?",
+            ]
+        return random.choice(dan_greetings)
+
     name_part = f", {name}" if name else ""
 
     # If we have a recent topic, reference it
@@ -313,7 +351,7 @@ def generate_new_user_greeting() -> str:
 
 
 # =============================================================================
-# ZEP MEMORY CLIENT
+# ZEP MEMORY CLIENT - Thread-based conversation memory
 # =============================================================================
 
 _zep_client: Optional["AsyncZep"] = None
@@ -331,57 +369,211 @@ def get_zep_client() -> Optional["AsyncZep"]:
     return _zep_client
 
 
-async def get_user_memory(user_id: str) -> dict:
-    """Retrieve user's conversation history and interests from Zep."""
-    client = get_zep_client()
-    if not client:
-        return {"found": False, "is_returning": False, "facts": []}
+async def ensure_user_exists(client, user_id: str, email: Optional[str] = None) -> bool:
+    """Ensure user exists in Zep, create if not."""
+    try:
+        await client.user.get(user_id)
+        return True
+    except Exception:
+        try:
+            await client.user.add(user_id=user_id, email=email)
+            print(f"[VIC Zep] Created new user: {user_id}", file=sys.stderr)
+            return True
+        except Exception as e:
+            print(f"[VIC Zep] Failed to create user: {e}", file=sys.stderr)
+            return False
+
+
+async def get_or_create_thread(client, user_id: str, session_id: str) -> Optional[str]:
+    """Get or create a thread for this user's session."""
+    # Use a deterministic thread ID based on user + session
+    thread_id = f"{user_id}-{session_id}"
 
     try:
-        results = await client.graph.search(
-            user_id=user_id,
-            query="user name interests preferences topics discussed London history",
-            limit=20,
-            scope="edges",
-        )
+        # Try to get existing thread
+        await client.thread.get(thread_id)
+        return thread_id
+    except Exception:
+        # Create new thread
+        try:
+            await client.thread.create(thread_id=thread_id, user_id=user_id)
+            print(f"[VIC Zep] Created new thread: {thread_id}", file=sys.stderr)
+            return thread_id
+        except Exception as e:
+            print(f"[VIC Zep] Failed to create thread: {e}", file=sys.stderr)
+            return None
 
-        facts = []
-        if results and hasattr(results, 'edges') and results.edges:
-            facts = [edge.fact for edge in results.edges if hasattr(edge, 'fact') and edge.fact]
+
+async def get_user_memory(user_id: str, thread_id: Optional[str] = None) -> dict:
+    """Retrieve user's conversation history and interests from Zep.
+
+    Uses the proper thread-based API:
+    1. thread.get_user_context() - Gets relevant context from ALL past threads
+    2. graph.search() - For topic-specific searches
+    3. user.get_node() - For user summary
+    """
+    client = get_zep_client()
+    if not client:
+        return {"found": False, "is_returning": False, "facts": [], "topics": [], "context": ""}
+
+    user_name = None
+    topics = []
+    clean_facts = []
+    context_block = ""
+
+    try:
+        # Ensure user exists first
+        await ensure_user_exists(client, user_id)
+
+        # METHOD 1: Get user context from thread (BEST - includes all past conversations)
+        if thread_id:
+            try:
+                user_context = await client.thread.get_user_context(thread_id)
+                if user_context and hasattr(user_context, 'context') and user_context.context:
+                    context_block = user_context.context
+                    print(f"[VIC Zep] Got thread context ({len(context_block)} chars)", file=sys.stderr)
+
+                    # Extract facts from context
+                    if hasattr(user_context, 'facts') and user_context.facts:
+                        for fact in user_context.facts:
+                            fact_text = getattr(fact, 'fact', str(fact)) if hasattr(fact, 'fact') else str(fact)
+                            if fact_text and len(fact_text) < 300:
+                                clean_facts.append(fact_text)
+                                # Extract topics from facts
+                                topic_match = re.search(r'interested in ([A-Z][^.]+?)(?:\.|$)', fact_text, re.IGNORECASE)
+                                if topic_match:
+                                    topics.append(topic_match.group(1).strip())
+            except Exception as e:
+                print(f"[VIC Zep] Thread context error: {e}", file=sys.stderr)
+
+        # METHOD 2: Get user node for summary
+        try:
+            user_node = await client.user.get_node(user_id)
+            if user_node and hasattr(user_node, 'summary') and user_node.summary:
+                clean_facts.append(user_node.summary)
+        except Exception:
+            pass  # User node may not exist yet
+
+        # METHOD 3: Search graph for topic interests (fallback/supplement)
+        try:
+            results = await client.graph.search(
+                user_id=user_id,
+                query="interested in topic_interest preferred_name Royal Aquarium Thorney",
+                limit=20,
+                scope="edges",
+            )
+
+            if results and hasattr(results, 'edges') and results.edges:
+                for edge in results.edges:
+                    fact = getattr(edge, 'fact', '') or ''
+
+                    if fact and len(fact) < 200:
+                        # Skip garbled auto-extractions
+                        if 'type' in fact.lower() and 'explored' in fact.lower():
+                            continue
+                        if 'entity' in fact.lower() and 'type' in fact.lower():
+                            continue
+
+                        # Extract topic names
+                        topic_match = re.search(r'interested in ([A-Z][^.]+?)(?:\.|$)', fact, re.IGNORECASE)
+                        if topic_match:
+                            topic = topic_match.group(1).strip()
+                            if len(topic) > 2 and topic.lower() not in ['the', 'a', 'an', 'london history']:
+                                topics.append(topic)
+
+                        # Extract user name
+                        name_match = re.search(r'preferred name is (\w+)', fact, re.IGNORECASE)
+                        if name_match:
+                            user_name = name_match.group(1)
+
+                        # Keep clean facts
+                        if 'interested in' in fact.lower() or 'preferred name' in fact.lower():
+                            clean_facts.append(fact)
+        except Exception as e:
+            print(f"[VIC Zep] Graph search error: {e}", file=sys.stderr)
+
+        # Dedupe and limit
+        topics = list(dict.fromkeys(topics))[:5]  # Unique, max 5
+        clean_facts = list(dict.fromkeys(clean_facts))[:10]
+
+        is_returning = len(topics) > 0 or len(clean_facts) > 0 or len(context_block) > 0
+
+        print(f"[VIC Zep] Memory retrieved: returning={is_returning}, topics={topics[:3]}, facts={len(clean_facts)}", file=sys.stderr)
 
         return {
             "found": True,
-            "is_returning": len(facts) > 0,
-            "facts": facts[:10],  # Limit to 10 most relevant
-            "user_name": extract_user_name_from_facts(facts),
+            "is_returning": is_returning,
+            "facts": clean_facts,
+            "topics": topics,
+            "user_name": user_name,
+            "context": context_block,  # Full context block for prompt injection
         }
     except Exception as e:
-        print(f"[VIC] Zep search error: {e}", file=sys.stderr)
-        return {"found": False, "is_returning": False, "facts": []}
+        print(f"[VIC Zep] Memory error: {e}", file=sys.stderr)
+        return {"found": False, "is_returning": False, "facts": [], "topics": [], "context": ""}
 
 
-async def store_to_memory(user_id: str, message: str, role: str = "user") -> bool:
-    """Store conversation message to Zep for future context."""
+async def store_to_memory(user_id: str, message: str, role: str = "user", session_id: Optional[str] = None) -> bool:
+    """Store conversation message to Zep using thread-based API."""
     client = get_zep_client()
     if not client:
         return False
 
     try:
         # Ensure user exists
-        try:
-            await client.user.get(user_id)
-        except Exception:
-            await client.user.add(user_id=user_id)
+        await ensure_user_exists(client, user_id)
 
-        # Add message to graph
-        await client.graph.add(
-            user_id=user_id,
-            type="message",
-            data=f"{role}: {message}",
-        )
+        # Get or create thread for this session
+        thread_id = None
+        if session_id:
+            thread_id = await get_or_create_thread(client, user_id, session_id)
+
+        if thread_id:
+            # Store message in thread (proper way)
+            await client.thread.add_messages(
+                thread_id=thread_id,
+                messages=[{
+                    "role": role,
+                    "content": message,
+                    "name": "VIC" if role == "assistant" else "User",
+                }]
+            )
+            print(f"[VIC Zep] Stored message to thread {thread_id}: {message[:50]}...", file=sys.stderr)
+        else:
+            # Fallback: Add to graph directly (less ideal but works)
+            await client.graph.add(
+                user_id=user_id,
+                type="message",
+                data=f"{role}: {message}",
+            )
+            print(f"[VIC Zep] Stored message to graph (no thread): {message[:50]}...", file=sys.stderr)
+
         return True
     except Exception as e:
-        print(f"[VIC] Zep store error: {e}", file=sys.stderr)
+        print(f"[VIC Zep] Store error: {e}", file=sys.stderr)
+        return False
+
+
+async def store_topic_interest(user_id: str, topic: str, user_name: Optional[str] = None) -> bool:
+    """Store a topic interest as a fact in Zep."""
+    client = get_zep_client()
+    if not client:
+        return False
+
+    try:
+        await ensure_user_exists(client, user_id)
+
+        # Store as a clear fact
+        fact_text = f"{user_name or 'User'} is interested in {topic}."
+        await client.graph.add(
+            user_id=user_id,
+            type="text",
+            data=fact_text,
+        )
+        print(f"[VIC Zep] Stored topic interest: {fact_text}", file=sys.stderr)
+        return True
+    except Exception as e:
+        print(f"[VIC Zep] Store topic error: {e}", file=sys.stderr)
         return False
 
 
@@ -1442,9 +1634,13 @@ async def clm_endpoint(request: Request):
         if user_id:
             import asyncio
 
+            # Create thread_id for Zep (user + session combination)
+            thread_id = f"{user_id}-{session_id}" if session_id else None
+
             async def safe_get_memory():
                 try:
-                    return await get_user_memory(user_id)
+                    # Pass thread_id to get proper conversation context
+                    return await get_user_memory(user_id, thread_id=thread_id)
                 except Exception as e:
                     print(f"[VIC CLM] Zep lookup failed: {e}", file=sys.stderr)
                     return None
@@ -1560,22 +1756,26 @@ async def clm_endpoint(request: Request):
             # First greeting this session - personalize based on user context
             is_returning = user_context.get("is_returning", False) if user_context else False
             user_interests = user_context.get("interests", []) if user_context else []
+            user_facts = user_context.get("facts", []) if user_context else []
 
-            if is_returning and user_name and user_interests:
-                # Returning user with known interests - suggest their topic!
-                suggested_topic = user_interests[0]  # Most recent interest
-                response_text = f"Welcome back, {user_name}! I remember you were interested in {suggested_topic}. Shall we explore that further, or would you like to discover something new?"
-                # STORE the suggestion so "yes" works
-                set_last_suggestion(session_id or "default", suggested_topic)
-                mark_name_used(session_id or "default", in_greeting=True)
-                print(f"[VIC CLM] Suggesting topic from Zep: {suggested_topic}", file=sys.stderr)
-            elif is_returning and user_name:
-                # Returning user with name (no interests yet)
-                response_text = f"Welcome back to Lost London, {user_name}! Lovely to hear from you again. What corner of London's hidden history shall we explore today?"
-                mark_name_used(session_id or "default", in_greeting=True)
+            if is_returning:
+                # Use the generate_returning_user_greeting function - handles Keegan family special cases!
+                response_text = generate_returning_user_greeting(user_name, user_interests, user_facts)
+                # Store suggested topic if interests exist (so "yes" works)
+                if user_interests:
+                    set_last_suggestion(session_id or "default", user_interests[0])
+                    print(f"[VIC CLM] Suggesting topic from Zep: {user_interests[0]}", file=sys.stderr)
+                if user_name:
+                    mark_name_used(session_id or "default", in_greeting=True)
             elif user_name:
-                # New user with name - suggest Thorney Island
-                response_text = f"Welcome to Lost London, {user_name}! I'm Vic Keegan. I've spent years uncovering this city's hidden stories. Shall I tell you about Thorney Island, the mysterious island beneath Westminster?"
+                # New user with name - check for Keegan family special cases
+                name_lower = user_name.lower().strip()
+                if name_lower == "vic":
+                    response_text = "Welcome to Lost London, Vic - my brother from another mother! I'm honoured to share your name. Shall I tell you about Thorney Island, the mysterious island beneath Westminster?"
+                elif name_lower == "dan":
+                    response_text = "Welcome to Lost London, Dan, son of Vic! I'm your namesake's digital twin. Shall I tell you about Thorney Island, the mysterious island beneath Westminster?"
+                else:
+                    response_text = f"Welcome to Lost London, {user_name}! I'm Vic Keegan. I've spent years uncovering this city's hidden stories. Shall I tell you about Thorney Island, the mysterious island beneath Westminster?"
                 set_last_suggestion(session_id or "default", "Thorney Island")
                 mark_name_used(session_id or "default", in_greeting=True)
             else:
@@ -1932,12 +2132,12 @@ CRITICAL RULES:
                 response_text = truncated
                 print(f"[VIC CLM] Truncated response from {len(words)} to ~80 words for voice", file=sys.stderr)
 
-            # Store conversation to Zep memory (async, don't await)
+            # Store conversation to Zep memory using thread-based API
             if user_id and len(user_msg) > 5:
-                # Store user message
-                await store_to_memory(user_id, user_msg, "user")
+                # Store user message with session_id for thread creation
+                await store_to_memory(user_id, user_msg, "user", session_id=session_id)
                 # Store VIC's response (summarized)
-                await store_to_memory(user_id, response_text[:500], "assistant")
+                await store_to_memory(user_id, response_text[:500], "assistant", session_id=session_id)
 
         else:
             response_text = "I don't seem to have any articles about that in my collection. Would you like to explore something else? I've got stories about Thorney Island, the Royal Aquarium, Tyburn, and many other hidden corners of London."
