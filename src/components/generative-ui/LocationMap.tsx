@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 
 interface LocationMapProps {
   location: {
@@ -14,6 +14,14 @@ interface LocationMapProps {
 export function LocationMap({ location }: LocationMapProps) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
+
+  // Safe handlers to avoid React #185 error
+  const handleImageLoad = useCallback(() => {
+    setTimeout(() => setImageLoaded(true), 0);
+  }, []);
+  const handleImageError = useCallback(() => {
+    setTimeout(() => setImageError(true), 0);
+  }, []);
 
   // Static map image from OpenStreetMap (more reliable than iframe which gets blocked)
   const staticMapUrl = `https://staticmap.openstreetmap.de/staticmap.php?center=${location.lat},${location.lng}&zoom=15&size=400x200&markers=${location.lat},${location.lng},red-pushpin`;
@@ -59,8 +67,8 @@ export function LocationMap({ location }: LocationMapProps) {
           src={staticMapUrl}
           alt={`Map of ${location.name}`}
           className={`w-full h-full object-cover transition-opacity duration-300 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
-          onLoad={() => setImageLoaded(true)}
-          onError={() => setImageError(true)}
+          onLoad={handleImageLoad}
+          onError={handleImageError}
         />
 
         {/* Hover overlay */}

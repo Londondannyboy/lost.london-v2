@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 
 interface ArticleCardProps {
   id: string;
@@ -29,6 +29,15 @@ export function ArticleCard({
 }: ArticleCardProps) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
+
+  // Safe handlers - defer state updates to avoid React #185 error
+  const handleImageLoad = useCallback(() => {
+    // Use setTimeout to avoid "Cannot update during render" error
+    setTimeout(() => setImageLoaded(true), 0);
+  }, []);
+  const handleImageError = useCallback(() => {
+    setTimeout(() => setImageError(true), 0);
+  }, []);
 
   // Beautiful fallback gradients when no image
   const gradients = [
@@ -65,8 +74,8 @@ export function ArticleCard({
                 transition-all duration-700 group-hover:scale-105
                 ${imageLoaded ? "opacity-100" : "opacity-0"}
               `}
-              onLoad={() => setImageLoaded(true)}
-              onError={() => setImageError(true)}
+              onLoad={handleImageLoad}
+              onError={handleImageError}
             />
           </>
         ) : (
@@ -141,6 +150,11 @@ export function ArticleCardCompact({
 }: Pick<ArticleCardProps, "title" | "excerpt" | "hero_image_url" | "slug">) {
   const [imageLoaded, setImageLoaded] = useState(false);
 
+  // Safe handler to avoid React #185 error
+  const handleLoad = useCallback(() => {
+    setTimeout(() => setImageLoaded(true), 0);
+  }, []);
+
   return (
     <a
       href={`https://lost.london/${slug}`}
@@ -155,7 +169,7 @@ export function ArticleCardCompact({
             src={hero_image_url}
             alt=""
             className={`w-full h-full object-cover transition-opacity ${imageLoaded ? "opacity-100" : "opacity-0"}`}
-            onLoad={() => setImageLoaded(true)}
+            onLoad={handleLoad}
           />
         ) : (
           <div className="w-full h-full bg-gradient-to-br from-amber-700 to-stone-800" />
