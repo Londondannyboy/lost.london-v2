@@ -63,8 +63,8 @@ export function ArticleCard({
       {...cardProps}
       className="block relative rounded-xl overflow-hidden group cursor-pointer h-48 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02] w-full text-left"
     >
-      {/* Background - Full-bleed image or gradient */}
-      <div className="absolute inset-0">
+      {/* Background - Full-bleed image or gradient (pointer-events-none so clicks pass through) */}
+      <div className="absolute inset-0 pointer-events-none">
         {hasImage ? (
           <>
             {/* Loading placeholder */}
@@ -97,10 +97,10 @@ export function ArticleCard({
       </div>
 
       {/* Hover glow effect */}
-      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-xl shadow-[inset_0_0_30px_rgba(217,119,6,0.3)]" />
+      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-xl shadow-[inset_0_0_30px_rgba(217,119,6,0.3)] pointer-events-none" />
 
-      {/* Content overlay */}
-      <div className="absolute inset-0 p-4 flex flex-col justify-end">
+      {/* Content overlay (pointer-events-none so clicks pass through, except for interactive elements) */}
+      <div className="absolute inset-0 p-4 flex flex-col justify-end pointer-events-none">
         {/* Era/Location badges - top */}
         <div className="absolute top-3 left-3 right-3 flex items-center gap-2 flex-wrap">
           {date_range && (
@@ -148,7 +148,7 @@ export function ArticleCard({
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className="absolute top-3 right-3 p-2 bg-white/20 backdrop-blur-sm rounded-full hover:bg-white/40 transition-colors"
+            className="absolute top-3 right-3 p-2 bg-white/20 backdrop-blur-sm rounded-full hover:bg-white/40 transition-colors pointer-events-auto"
             title="Read full article on lost.london"
           >
             <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
