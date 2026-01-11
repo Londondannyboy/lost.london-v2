@@ -152,6 +152,7 @@ export function TopicContext({
             location={articles[0].location?.name}
             date_range={articles[0].era || undefined}
             index={0}
+            onClick={onArticleClick ? () => onArticleClick(articles[0]) : undefined}
           />
 
           {/* More articles - collapsible */}
@@ -169,6 +170,7 @@ export function TopicContext({
                   location={article.location?.name}
                   date_range={article.era || undefined}
                   index={index + 1}
+                  onClick={onArticleClick ? () => onArticleClick(article) : undefined}
                 />
               ))}
               <button

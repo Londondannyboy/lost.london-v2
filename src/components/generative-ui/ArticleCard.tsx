@@ -12,6 +12,7 @@ interface ArticleCardProps {
   location?: string;
   date_range?: string;
   index?: number;
+  onClick?: () => void;  // Handler to trigger VIC conversation
 }
 
 /**
@@ -26,6 +27,7 @@ export function ArticleCard({
   location,
   date_range,
   index = 0,
+  onClick,
 }: ArticleCardProps) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
@@ -50,12 +52,16 @@ export function ArticleCard({
 
   const hasImage = hero_image_url && !imageError;
 
+  // If onClick is provided, card triggers VIC conversation; otherwise link to lost.london
+  const CardWrapper = onClick ? 'button' : 'a';
+  const cardProps = onClick
+    ? { onClick, type: 'button' as const }
+    : { href: `https://lost.london/${slug}`, target: '_blank', rel: 'noopener noreferrer' };
+
   return (
-    <a
-      href={`https://lost.london/${slug}`}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="block relative rounded-xl overflow-hidden group cursor-pointer h-48 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02]"
+    <CardWrapper
+      {...cardProps}
+      className="block relative rounded-xl overflow-hidden group cursor-pointer h-48 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02] w-full text-left"
     >
       {/* Background - Full-bleed image or gradient */}
       <div className="absolute inset-0">
@@ -125,17 +131,33 @@ export function ArticleCard({
           </p>
         </div>
 
-        {/* Read indicator - appears on hover */}
+        {/* Action indicator - appears on hover */}
         <div className="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-y-2 group-hover:translate-y-0">
           <span className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 text-white text-xs font-semibold rounded-full shadow-lg">
-            Read
+            {onClick ? 'Ask VIC' : 'Read'}
             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
           </span>
         </div>
+
+        {/* External link - only when onClick is provided (so user can still read full article) */}
+        {onClick && (
+          <a
+            href={`https://lost.london/${slug}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="absolute top-3 right-3 p-2 bg-white/20 backdrop-blur-sm rounded-full hover:bg-white/40 transition-colors"
+            title="Read full article on lost.london"
+          >
+            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+          </a>
+        )}
       </div>
-    </a>
+    </CardWrapper>
   );
 }
 
