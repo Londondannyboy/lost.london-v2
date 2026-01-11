@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
       // Search by title or content
       const searchTerm = `%${search.toLowerCase()}%`;
       articles = await sql`
-        SELECT id, title, slug, excerpt, hero_image_url
+        SELECT id, title, slug, excerpt, featured_image_url as hero_image_url
         FROM articles
         WHERE LOWER(title) LIKE ${searchTerm}
            OR LOWER(content) LIKE ${searchTerm}
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
     } else {
       // Get all articles
       articles = await sql`
-        SELECT id, title, slug, excerpt, hero_image_url
+        SELECT id, title, slug, excerpt, featured_image_url as hero_image_url
         FROM articles
         ORDER BY title ASC
         LIMIT ${limit}

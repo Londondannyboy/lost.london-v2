@@ -6,11 +6,10 @@ import { Role, TextMessage } from "@copilotkit/runtime-client-gql";
 import { VoiceInput } from "@/components/voice-input";
 import { ArticleGrid } from "@/components/generative-ui/ArticleGrid";
 import { ArticleCard } from "@/components/generative-ui/ArticleCard";
-import { LocationMap } from "@/components/generative-ui/LocationMap";
 import { Timeline } from "@/components/generative-ui/Timeline";
 import { BookDisplay } from "@/components/generative-ui/BookDisplay";
-import { TopicContext } from "@/components/generative-ui/TopicContext";
 import { TopicImage } from "@/components/generative-ui/TopicImage";
+// TopicContext & LocationMap removed - now rendering directly in useRenderToolCall following copilotkit-demo pattern
 import { LibrarianMessage, LibrarianThinking } from "@/components/LibrarianAvatar";
 import { CustomUserMessage, ChatUserContext } from "@/components/ChatMessages";
 import { DebugPanel } from "@/components/DebugPanel";
@@ -168,13 +167,24 @@ const BackgroundContext = createContext<{
 });
 
 // Component to set background when mounted (used in render callbacks)
+// Uses ref to prevent infinite loops - only updates if URL actually changed
 function BackgroundUpdater({ imageUrl, topic }: { imageUrl: string; topic?: string }) {
-  const { setBackground } = useContext(BackgroundContext);
+  const { setBackground, currentBackground } = useContext(BackgroundContext);
+  const hasSetRef = useRef(false);
+
   useEffect(() => {
-    if (imageUrl) {
+    // Only set background if URL is different from current and we haven't already set it
+    if (imageUrl && imageUrl !== currentBackground.url && !hasSetRef.current) {
+      hasSetRef.current = true;
       setBackground(imageUrl, topic);
     }
-  }, [imageUrl, topic, setBackground]);
+  }, [imageUrl, topic, setBackground, currentBackground.url]);
+
+  // Reset ref when imageUrl changes to allow new updates
+  useEffect(() => {
+    hasSetRef.current = false;
+  }, [imageUrl]);
+
   return null;
 }
 
@@ -528,7 +538,35 @@ export default function Home() {
           </div>
         );
       }
-      return <LocationMap location={result.location} />;
+      const loc = result.location;
+      return (
+        <a
+          href={`https://www.google.com/maps?q=${loc.lat},${loc.lng}&z=16`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block bg-gradient-to-r from-blue-50 to-cyan-50 rounded-xl p-4 border border-blue-200 hover:border-blue-400 transition-colors group"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center">
+                <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div>
+                <p className="font-semibold text-blue-800">{loc.name}</p>
+                <p className="text-xs text-blue-600">{loc.lat.toFixed(4)}, {loc.lng.toFixed(4)}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1 text-blue-600 group-hover:text-blue-800 transition-colors">
+              <span className="text-sm font-medium">View on Google Maps</span>
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </div>
+          </div>
+        </a>
+      );
     },
   });
 
@@ -593,26 +631,206 @@ export default function Home() {
       // Debug disabled - was causing console spam
       // console.log('[Rosie] Full result:', { uiComponent, query: uiData?.query });
 
-      // TopicContext is rendered directly (it includes its own Librarian header)
+      // TopicContext - Following copilotkit-demo pattern: render clickable UI directly
       if (uiComponent === "TopicContext") {
-        // Set Rosie's articles to announce (for dual-voice prototype)
-        // Use ref to prevent infinite loop - only announce once per query
+        // Rosie voice announcement - defer to avoid React #185 error
         const currentQuery = uiData?.query || "your topic";
         if (uiData?.articles && uiData.articles.length > 0 && lastRosieQueryRef.current !== currentQuery) {
           lastRosieQueryRef.current = currentQuery;
-          setRosieArticles({
-            query: currentQuery,
-            count: uiData.articles.length,
-            titles: uiData.articles.map((a: any) => a.title || a.name).slice(0, 3),
-          });
+          // Defer state update to next tick to avoid "setState during render" error
+          setTimeout(() => {
+            setRosieArticles({
+              query: currentQuery,
+              count: uiData.articles.length,
+              titles: uiData.articles.map((a: any) => a.title || a.name).slice(0, 3),
+            });
+          }, 0);
         }
 
-        return (
-          <>
-            {/* Update hero background when topic has an image */}
-            {uiData?.hero_image && <BackgroundUpdater imageUrl={uiData.hero_image} topic={uiData?.query} />}
+        const articles = uiData?.articles || [];
+        const timelineEvents = uiData?.timeline_events || [];
+        const topicQuery = uiData?.query || "";
 
-            {/* HITL: Confirm interest before storing to Zep */}
+        return (
+          <div className="space-y-4">
+            {/* Update hero background when topic has an image */}
+            {uiData?.hero_image && <BackgroundUpdater imageUrl={uiData.hero_image} topic={topicQuery} />}
+
+            {/* Hero image with "Tell me more" button */}
+            {uiData?.hero_image && (
+              <div className="relative rounded-xl overflow-hidden shadow-lg">
+                <img src={uiData.hero_image} alt={topicQuery} className="w-full h-44 object-cover" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent pointer-events-none" />
+                <div className="absolute bottom-0 left-0 right-0 p-4 z-10">
+                  <h3 className="text-white font-bold text-xl drop-shadow-lg mb-1">{topicQuery}</h3>
+                  {uiData?.brief && <p className="text-white/90 text-sm line-clamp-2 drop-shadow">{uiData.brief}</p>}
+                  <div className="flex items-center gap-2 mt-2 flex-wrap">
+                    {uiData?.era && (
+                      <span className="px-2 py-0.5 bg-amber-500/90 text-white text-xs font-medium rounded-full">
+                        {uiData.era}
+                      </span>
+                    )}
+                    {uiData?.location?.name && (
+                      <span className="px-2 py-0.5 bg-white/20 backdrop-blur-sm text-white text-xs rounded-full">
+                        {uiData.location.name}
+                      </span>
+                    )}
+                  </div>
+                  {/* Separate row for button - ensures clickability */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      appendMessage(new TextMessage({ content: `Tell me more about ${topicQuery}`, role: Role.User }));
+                    }}
+                    className="mt-2 px-4 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-full transition-colors cursor-pointer"
+                  >
+                    Tell me more →
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Brief summary - only if no hero image */}
+            {!uiData?.hero_image && uiData?.brief && (
+              <div className="bg-gradient-to-r from-amber-50 to-stone-50 rounded-xl p-4 border border-amber-100">
+                <h3 className="font-semibold text-stone-800 mb-1">{uiData?.query}</h3>
+                <p className="text-sm text-stone-600">{uiData.brief}</p>
+              </div>
+            )}
+
+            {/* TIMELINE - clickable events with "Ask VIC" button */}
+            {timelineEvents.length > 0 && (
+              <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl p-3 border border-amber-200">
+                <div className="flex items-center gap-2 mb-3">
+                  <svg className="w-4 h-4 text-amber-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                  </svg>
+                  <span className="text-sm font-semibold text-amber-800">{uiData?.era || "Timeline"}</span>
+                </div>
+                <div className="space-y-2">
+                  {timelineEvents.map((event: any, i: number) => (
+                    <div
+                      key={i}
+                      className="p-2 rounded-lg bg-white/60 border border-amber-100"
+                    >
+                      <div className="flex items-start gap-2">
+                        <span className="text-amber-700 font-bold text-sm min-w-[3rem]">{event.year}</span>
+                        <div className="flex-1">
+                          <p className="text-stone-800 font-medium text-sm">{event.title}</p>
+                          {event.description && (
+                            <p className="text-stone-500 text-xs mt-0.5">{event.description}</p>
+                          )}
+                          {/* Action button for this event */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const message = `Tell me about ${event.title}`;
+                              appendMessage(new TextMessage({ content: message, role: Role.User }));
+                            }}
+                            className="mt-1.5 px-2.5 py-0.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium rounded-full transition-colors cursor-pointer"
+                          >
+                            Ask VIC about this →
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* MAP - Simple styled link (static map images unreliable) */}
+            {uiData?.location?.lat && uiData?.location?.lng && (
+              <a
+                href={`https://www.google.com/maps?q=${uiData.location.lat},${uiData.location.lng}&z=16`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block bg-gradient-to-r from-blue-50 to-cyan-50 rounded-xl p-4 border border-blue-200 hover:border-blue-400 transition-colors group"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center">
+                      <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-blue-800">{uiData.location.name}</p>
+                      <p className="text-xs text-blue-600">
+                        {uiData.location.lat.toFixed(4)}, {uiData.location.lng.toFixed(4)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 text-blue-600 group-hover:text-blue-800 transition-colors">
+                    <span className="text-sm font-medium">View on Google Maps</span>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </div>
+                </div>
+              </a>
+            )}
+
+            {/* ARTICLES - with clickable cards (copilotkit-demo pattern: direct buttons) */}
+            {articles.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 mb-1">
+                  <svg className="w-4 h-4 text-stone-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z" />
+                  </svg>
+                  <span className="text-sm font-semibold text-stone-700">Related Articles ({articles.length})</span>
+                </div>
+
+                {articles.map((article: any, i: number) => {
+                  // Generate slug from title if not provided (matches lost.london URL format)
+                  const articleSlug = article.slug || article.title
+                    ?.toLowerCase()
+                    .replace(/['']/g, '')
+                    .replace(/[^a-z0-9]+/g, '-')
+                    .replace(/^-+|-+$/g, '');
+
+                  return (
+                  <div key={article.id || i} className="bg-white rounded-lg border border-stone-200 overflow-hidden hover:shadow-md transition-shadow">
+                    {/* Article image + content */}
+                    <div className="flex">
+                      {article.hero_image_url && (
+                        <img src={article.hero_image_url} alt="" className="w-24 h-20 object-cover flex-shrink-0" />
+                      )}
+                      <div className="flex-1 p-3 min-w-0">
+                        <h4 className="font-medium text-stone-800 text-sm line-clamp-1">{article.title}</h4>
+                        <p className="text-stone-500 text-xs line-clamp-2 mt-0.5">{article.excerpt}</p>
+                        {/* Action buttons - copilotkit-demo pattern */}
+                        <div className="flex gap-2 mt-2">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const message = `Tell me more about ${article.title}`;
+                              appendMessage(new TextMessage({ content: message, role: Role.User }));
+                            }}
+                            className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium rounded-full transition-colors cursor-pointer"
+                          >
+                            Ask VIC →
+                          </button>
+                          <a
+                            href={`https://lost.london/article/${articleSlug}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3 py-1 bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-medium rounded-full transition-colors"
+                          >
+                            Read Article
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* HITL: Confirm interest */}
             {user?.id && uiData?.query && uiData.query.length > 3 && (
               <ConfirmInterestFromTool
                 result={{
@@ -630,25 +848,7 @@ export default function Home() {
                 }}
               />
             )}
-
-            <TopicContext
-              query={uiData?.query || ""}
-              brief={uiData?.brief}
-              articles={uiData?.articles}
-              location={uiData?.location}
-              era={uiData?.era}
-              timeline_events={uiData?.timeline_events}
-              hero_image={uiData?.hero_image}
-              onTimelineEventClick={(event) => {
-                const message = `Tell me about ${event.title} in ${event.year}`;
-                appendMessage(new TextMessage({ content: message, role: Role.User }));
-              }}
-              onArticleClick={(article) => {
-                const message = `Tell me more about ${article.title}`;
-                appendMessage(new TextMessage({ content: message, role: Role.User }));
-              }}
-            />
-          </>
+          </div>
         );
       }
 
@@ -675,7 +875,24 @@ export default function Home() {
             <ArticleGrid articles={uiData.articles} query={uiData.query} />
           )}
           {uiComponent === "LocationMap" && uiData?.location && (
-            <LocationMap location={uiData.location} />
+            <a
+              href={`https://www.google.com/maps?q=${uiData.location.lat},${uiData.location.lng}&z=16`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block bg-gradient-to-r from-blue-50 to-cyan-50 rounded-xl p-4 border border-blue-200 hover:border-blue-400 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center">
+                  <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="font-semibold text-blue-800">{uiData.location.name}</p>
+                  <p className="text-xs text-blue-600">View on Google Maps →</p>
+                </div>
+              </div>
+            </a>
           )}
           {uiComponent === "Timeline" && uiData?.events && (
             <Timeline era={uiData.era} events={uiData.events} />
