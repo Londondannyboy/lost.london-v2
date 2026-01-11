@@ -17,6 +17,7 @@ import { DebugPanel } from "@/components/DebugPanel";
 import { RosieVoice } from "@/components/rosie-voice";
 import { ConfirmInterestFromTool } from "@/components/ConfirmInterest";
 import { TopicChangeConfirmation, detectTopicChangeRequest } from "@/components/TopicChangeConfirmation";
+import { ArticlesSection } from "@/components/ArticlesSection";
 import { useCallback, useEffect, useState, useRef } from "react";
 import { authClient } from "@/lib/auth/client";
 
@@ -959,8 +960,16 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
         </div>
       </section>
 
-      {/* About - hidden on mobile */}
-      <section className="hidden md:block py-12">
+      {/* Articles Section - browse all articles */}
+      <ArticlesSection
+        onArticleClick={(article) => {
+          const message = `Tell me about ${article.title}`;
+          appendMessage(new TextMessage({ content: message, role: Role.User }));
+        }}
+      />
+
+      {/* About */}
+      <section className="py-8 bg-white border-t border-gray-200">
         <div className="max-w-2xl mx-auto px-4 text-center">
           <p className="text-gray-600 text-sm">
             372 articles by Vic Keegan. Original content from{' '}
