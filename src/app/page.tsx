@@ -656,12 +656,18 @@ export default function Home() {
             {/* Update hero background when topic has an image */}
             {uiData?.hero_image && <BackgroundUpdater imageUrl={uiData.hero_image} topic={topicQuery} />}
 
-            {/* Hero image with "Tell me more" button */}
+            {/* Hero image - entire card is clickable to ask VIC */}
             {uiData?.hero_image && (
-              <div className="relative rounded-xl overflow-hidden shadow-lg">
-                <img src={uiData.hero_image} alt={topicQuery} className="w-full h-44 object-cover" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent pointer-events-none" />
-                <div className="absolute bottom-0 left-0 right-0 p-4 z-10">
+              <button
+                type="button"
+                onClick={() => {
+                  appendMessage(new TextMessage({ content: `Tell me more about ${topicQuery}`, role: Role.User }));
+                }}
+                className="relative rounded-xl overflow-hidden shadow-lg w-full text-left group cursor-pointer hover:shadow-xl transition-shadow"
+              >
+                <img src={uiData.hero_image} alt={topicQuery} className="w-full h-44 object-cover group-hover:scale-105 transition-transform duration-500" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent" />
+                <div className="absolute bottom-0 left-0 right-0 p-4">
                   <h3 className="text-white font-bold text-xl drop-shadow-lg mb-1">{topicQuery}</h3>
                   {uiData?.brief && <p className="text-white/90 text-sm line-clamp-2 drop-shadow">{uiData.brief}</p>}
                   <div className="flex items-center gap-2 mt-2 flex-wrap">
@@ -675,19 +681,12 @@ export default function Home() {
                         {uiData.location.name}
                       </span>
                     )}
+                    <span className="px-3 py-1 bg-amber-500 group-hover:bg-amber-600 text-white text-xs font-medium rounded-full transition-colors ml-auto">
+                      Tell me more →
+                    </span>
                   </div>
-                  {/* Separate row for button - ensures clickability */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      appendMessage(new TextMessage({ content: `Tell me more about ${topicQuery}`, role: Role.User }));
-                    }}
-                    className="mt-2 px-4 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-full transition-colors cursor-pointer"
-                  >
-                    Tell me more →
-                  </button>
                 </div>
-              </div>
+              </button>
             )}
 
             {/* Brief summary - only if no hero image */}
@@ -698,7 +697,7 @@ export default function Home() {
               </div>
             )}
 
-            {/* TIMELINE - clickable events with "Ask VIC" button */}
+            {/* TIMELINE - clickable events with article links */}
             {timelineEvents.length > 0 && (
               <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl p-3 border border-amber-200">
                 <div className="flex items-center gap-2 mb-3">
@@ -708,34 +707,60 @@ export default function Home() {
                   <span className="text-sm font-semibold text-amber-800">{uiData?.era || "Timeline"}</span>
                 </div>
                 <div className="space-y-2">
-                  {timelineEvents.map((event: any, i: number) => (
-                    <div
-                      key={i}
-                      className="p-2 rounded-lg bg-white/60 border border-amber-100"
-                    >
-                      <div className="flex items-start gap-2">
-                        <span className="text-amber-700 font-bold text-sm min-w-[3rem]">{event.year}</span>
-                        <div className="flex-1">
-                          <p className="text-stone-800 font-medium text-sm">{event.title}</p>
-                          {event.description && (
-                            <p className="text-stone-500 text-xs mt-0.5">{event.description}</p>
-                          )}
-                          {/* Action button for this event */}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const message = `Tell me about ${event.title}`;
-                              appendMessage(new TextMessage({ content: message, role: Role.User }));
-                            }}
-                            className="mt-1.5 px-2.5 py-0.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium rounded-full transition-colors cursor-pointer"
-                          >
-                            Ask VIC about this →
-                          </button>
+                  {timelineEvents.map((event: any, i: number) => {
+                    // Generate slug from event title for article link
+                    const eventSlug = event.title
+                      ?.toLowerCase()
+                      .replace(/['']/g, '')
+                      .replace(/[^a-z0-9]+/g, '-')
+                      .replace(/^-+|-+$/g, '');
+
+                    return (
+                      <div
+                        key={i}
+                        className="p-2 rounded-lg bg-white/60 border border-amber-100 hover:bg-white hover:border-amber-200 transition-colors"
+                      >
+                        <div className="flex items-start gap-2">
+                          <span className="text-amber-700 font-bold text-sm min-w-[3rem]">{event.year}</span>
+                          <div className="flex-1">
+                            {/* Event title is a link to search for that article */}
+                            <a
+                              href={`https://lost.london/articles?search=${encodeURIComponent(event.title)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-stone-800 font-medium text-sm hover:text-amber-700 transition-colors"
+                            >
+                              {event.title} →
+                            </a>
+                            {event.description && (
+                              <p className="text-stone-500 text-xs mt-0.5">{event.description}</p>
+                            )}
+                            {/* Action buttons */}
+                            <div className="flex gap-2 mt-1.5 flex-wrap">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const message = `Tell me about ${event.title}`;
+                                  appendMessage(new TextMessage({ content: message, role: Role.User }));
+                                }}
+                                className="px-2.5 py-0.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium rounded-full transition-colors cursor-pointer"
+                              >
+                                Ask VIC
+                              </button>
+                              <a
+                                href={`https://lost.london/articles?search=${encodeURIComponent(event.title)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-2.5 py-0.5 bg-stone-200 hover:bg-stone-300 text-stone-700 text-xs font-medium rounded-full transition-colors"
+                              >
+                                Find articles
+                              </a>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
