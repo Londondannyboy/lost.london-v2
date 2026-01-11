@@ -339,6 +339,7 @@ export default function Home() {
 
   // Rosie voice: articles to announce when found
   const [rosieArticles, setRosieArticles] = useState<RosieArticles | null>(null);
+  const lastRosieQueryRef = useRef<string | null>(null); // Prevent duplicate announcements
 
   // Topic change confirmation (HITL for voice users who don't open sidebar)
   const [pendingTopicChange, setPendingTopicChange] = useState<{
@@ -595,15 +596,15 @@ export default function Home() {
       // TopicContext is rendered directly (it includes its own Librarian header)
       if (uiComponent === "TopicContext") {
         // Set Rosie's articles to announce (for dual-voice prototype)
-        // Defer state update to avoid React #185 error
-        if (uiData?.articles && uiData.articles.length > 0) {
-          setTimeout(() => {
-            setRosieArticles({
-              query: uiData.query || "your topic",
-              count: uiData.articles.length,
-              titles: uiData.articles.map((a: any) => a.title || a.name).slice(0, 3),
-            });
-          }, 0);
+        // Use ref to prevent infinite loop - only announce once per query
+        const currentQuery = uiData?.query || "your topic";
+        if (uiData?.articles && uiData.articles.length > 0 && lastRosieQueryRef.current !== currentQuery) {
+          lastRosieQueryRef.current = currentQuery;
+          setRosieArticles({
+            query: currentQuery,
+            count: uiData.articles.length,
+            titles: uiData.articles.map((a: any) => a.title || a.name).slice(0, 3),
+          });
         }
 
         return (
