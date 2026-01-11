@@ -16,6 +16,7 @@ import { CustomUserMessage, ChatUserContext } from "@/components/ChatMessages";
 import { DebugPanel } from "@/components/DebugPanel";
 import { RosieVoice } from "@/components/rosie-voice";
 import { ConfirmInterestFromTool } from "@/components/ConfirmInterest";
+import { TopicChangeConfirmation, detectTopicChangeRequest } from "@/components/TopicChangeConfirmation";
 import { useCallback, useEffect, useState, useRef } from "react";
 import { authClient } from "@/lib/auth/client";
 
@@ -338,6 +339,12 @@ export default function Home() {
   // Rosie voice: articles to announce when found
   const [rosieArticles, setRosieArticles] = useState<RosieArticles | null>(null);
 
+  // Topic change confirmation (HITL for voice users who don't open sidebar)
+  const [pendingTopicChange, setPendingTopicChange] = useState<{
+    currentTopic: string;
+    newTopic: string;
+  } | null>(null);
+
   // Collapse sidebar on mobile - voice is the primary experience
   const isMobile = useIsMobile();
 
@@ -431,6 +438,18 @@ export default function Home() {
   // Librarian UI will appear via useRenderToolCall when tools run
   const handleVoiceMessage = useCallback((text: string, role?: "user" | "assistant") => {
     console.log(`[VIC] Voice ${role}: ${text.slice(0, 50)}...`);
+
+    // Check if VIC is asking about topic change (assistant message)
+    if (role === "assistant") {
+      const topicChange = detectTopicChangeRequest(text);
+      if (topicChange.isTopicChange && topicChange.currentTopic && topicChange.newTopic) {
+        console.log(`[VIC] Topic change detected: ${topicChange.currentTopic} → ${topicChange.newTopic}`);
+        setPendingTopicChange({
+          currentTopic: topicChange.currentTopic,
+          newTopic: topicChange.newTopic,
+        });
+      }
+    }
 
     // Only forward USER messages to CopilotKit
     // This triggers the agent which runs tools -> Librarian UI appears
@@ -859,6 +878,30 @@ ${userProfile.isReturningUser ? 'This is a RETURNING user - greet them warmly.' 
               isReturningUser={userProfile.isReturningUser}
               userFacts={userProfile.facts}
             />
+
+            {/* Topic Change Confirmation - HITL buttons for voice users */}
+            {pendingTopicChange && (
+              <div className="mt-4 w-full max-w-md animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <TopicChangeConfirmation
+                  currentTopic={pendingTopicChange.currentTopic}
+                  newTopic={pendingTopicChange.newTopic}
+                  userId={user?.id}
+                  userName={userProfile.preferred_name}
+                  onConfirm={(newTopic) => {
+                    // Send confirmation message to CopilotKit
+                    appendMessage(new TextMessage({ content: "Yes", role: Role.User }));
+                    setPendingTopicChange(null);
+                    console.log(`[VIC] Topic change confirmed: ${newTopic}`);
+                  }}
+                  onReject={(currentTopic) => {
+                    // Send rejection message to CopilotKit
+                    appendMessage(new TextMessage({ content: "No, stay on the current topic", role: Role.User }));
+                    setPendingTopicChange(null);
+                    console.log(`[VIC] Topic change rejected, staying on: ${currentTopic}`);
+                  }}
+                />
+              </div>
+            )}
 
             {/* Rosie Voice - Secondary (announces articles found) */}
             {/* Only render if NEXT_PUBLIC_HUME_ROSIE_CONFIG_ID is set */}

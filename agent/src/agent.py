@@ -88,6 +88,10 @@ class SessionContext:
     conversation_history: list = field(default_factory=list)  # [(role, text), ...]
     current_topic_context: str = ""  # "Currently discussing: Royal Aquarium"
 
+    # TOPIC CHANGE CONFIRMATION (prevents elastic-band effect)
+    pending_topic: str = ""  # New topic awaiting user confirmation
+    pending_topic_query: str = ""  # Original query that triggered topic change
+
 
 def get_session_context(session_id: str) -> SessionContext:
     """Get or create session context with LRU eviction."""
@@ -189,6 +193,160 @@ def get_current_topic(session_id: str) -> str:
     """Get the current topic being discussed."""
     ctx = get_session_context(session_id)
     return ctx.current_topic_context or ctx.last_topic or ""
+
+
+# =============================================================================
+# TOPIC CHANGE DETECTION & CONFIRMATION (Fixes "elastic band" effect)
+# =============================================================================
+
+# Patterns that indicate user wants to change topic
+TOPIC_CHANGE_PATTERNS = [
+    r"what about (.+?)(?:\?|$)",
+    r"tell me about (.+?) instead",
+    r"let'?s talk about (.+?)(?:\?|$)",
+    r"how about (.+?)(?:\?|$)",
+    r"switch to (.+?)(?:\?|$)",
+    r"can you tell me about (.+?)(?:\?|$)",
+    r"i'?d (?:like|rather) (?:to )?(?:hear|know|learn) about (.+?)(?:\?|$)",
+    r"what do you know about (.+?)(?:\?|$)",
+]
+
+# Words that confirm topic change (used after VIC asks)
+TOPIC_CONFIRM_WORDS = {"yes", "yeah", "yep", "sure", "ok", "okay", "please", "definitely", "absolutely"}
+TOPIC_REJECT_WORDS = {"no", "nope", "nah", "stay", "continue", "keep", "back", "never mind", "nevermind"}
+
+import re
+
+def extract_new_topic_from_query(query: str) -> Optional[str]:
+    """
+    Extract a new topic from query using topic change patterns.
+    Returns None if no topic change pattern detected.
+    """
+    query_lower = query.lower().strip()
+
+    for pattern in TOPIC_CHANGE_PATTERNS:
+        match = re.search(pattern, query_lower, re.IGNORECASE)
+        if match:
+            new_topic = match.group(1).strip()
+            # Clean up the extracted topic
+            new_topic = re.sub(r'\s*\{[^}]*\}', '', new_topic)  # Remove Hume emotions
+            new_topic = new_topic.rstrip('?.!')
+            if len(new_topic) > 2:
+                return new_topic.title()  # Capitalize properly
+
+    return None
+
+
+def is_topic_change_request(query: str, current_topic: str) -> tuple[bool, str]:
+    """
+    Detect if user wants to change topic.
+
+    Returns:
+        (is_change_request, new_topic)
+        - is_change_request: True if this looks like a topic change
+        - new_topic: The new topic they want (or "" if not detected)
+    """
+    if not current_topic:
+        return False, ""
+
+    # Check for explicit topic change patterns
+    new_topic = extract_new_topic_from_query(query)
+    if new_topic:
+        # Verify it's actually different from current topic
+        current_lower = current_topic.lower()
+        new_lower = new_topic.lower()
+
+        # Check if significantly different (not just substring)
+        if new_lower not in current_lower and current_lower not in new_lower:
+            return True, new_topic
+
+    # Check for new named entities that differ from current topic
+    # Look for capitalized words that might be place names
+    query_clean = re.sub(r'\s*\{[^}]*\}', '', query).strip()  # Remove Hume emotions
+    words = query_clean.split()
+
+    # Find potential topic names (2+ consecutive capitalized words or known locations)
+    potential_topics = []
+    i = 0
+    while i < len(words):
+        if words[i] and words[i][0].isupper() and words[i].lower() not in {'i', 'the', 'a', 'an', 'of'}:
+            topic_words = [words[i]]
+            j = i + 1
+            while j < len(words) and words[j] and words[j][0].isupper():
+                topic_words.append(words[j])
+                j += 1
+            if len(topic_words) >= 1:
+                potential_topics.append(' '.join(topic_words))
+            i = j
+        else:
+            i += 1
+
+    # Check if any potential topic is different from current
+    current_lower = current_topic.lower()
+    for topic in potential_topics:
+        topic_lower = topic.lower()
+        # Skip if it's part of current topic
+        if topic_lower in current_lower or current_lower in topic_lower:
+            continue
+        # Skip very short words that might be false positives
+        if len(topic) < 4:
+            continue
+        # This might be a new topic
+        return True, topic
+
+    return False, ""
+
+
+def set_pending_topic(session_id: str, new_topic: str, original_query: str):
+    """Set a pending topic awaiting user confirmation."""
+    ctx = get_session_context(session_id)
+    ctx.pending_topic = new_topic
+    ctx.pending_topic_query = original_query
+    logger.info(f"[Session] Set pending topic: '{new_topic}' for session {session_id}")
+
+
+def get_pending_topic(session_id: str) -> tuple[str, str]:
+    """Get pending topic and original query."""
+    ctx = get_session_context(session_id)
+    return ctx.pending_topic, ctx.pending_topic_query
+
+
+def clear_pending_topic(session_id: str):
+    """Clear pending topic (after confirmation or rejection)."""
+    ctx = get_session_context(session_id)
+    ctx.pending_topic = ""
+    ctx.pending_topic_query = ""
+    logger.info(f"[Session] Cleared pending topic for session {session_id}")
+
+
+def confirm_pending_topic(session_id: str) -> str:
+    """Confirm pending topic change - switch anchor to new topic."""
+    ctx = get_session_context(session_id)
+    new_topic = ctx.pending_topic
+
+    if new_topic:
+        # Switch the anchor
+        set_current_topic(session_id, new_topic)
+        clear_pending_topic(session_id)
+        logger.info(f"[Session] CONFIRMED topic change to: '{new_topic}' for session {session_id}")
+
+    return new_topic
+
+
+def is_topic_confirmation(query: str) -> bool:
+    """Check if query is confirming a topic change."""
+    query_clean = re.sub(r'\s*\{[^}]*\}', '', query.lower()).strip()
+    query_clean = query_clean.rstrip('?.!')
+
+    return query_clean in TOPIC_CONFIRM_WORDS or any(w in query_clean for w in TOPIC_CONFIRM_WORDS)
+
+
+def is_topic_rejection(query: str) -> bool:
+    """Check if query is rejecting a topic change."""
+    query_clean = re.sub(r'\s*\{[^}]*\}', '', query.lower()).strip()
+    query_clean = query_clean.rstrip('?.!')
+
+    return query_clean in TOPIC_REJECT_WORDS or any(w in query_clean for w in TOPIC_REJECT_WORDS)
 
 
 # =============================================================================
@@ -1885,6 +2043,46 @@ from Roman London to Victorian music halls. Would you like to hear about any par
     increment_turn(session_id)
 
     # ==========================================================================
+    # PENDING TOPIC HANDLING: Check if user is confirming/rejecting a topic change
+    # ==========================================================================
+    session_key = session_id or "default"
+    pending_topic, pending_query = get_pending_topic(session_key)
+
+    if pending_topic:
+        # We asked user if they want to change topic - check their response
+        if is_topic_confirmation(user_msg):
+            # User confirmed topic change - switch the anchor
+            confirmed_topic = confirm_pending_topic(session_key)
+            logger.info(f"[VIC TopicChange] User CONFIRMED switch to: {confirmed_topic}")
+
+            # Now search for the new topic
+            normalized_query = confirmed_topic
+            skip_to_full_response = True  # Go to full search, not teaser
+
+            # Track this
+            add_to_history(session_key, "user", f"Yes (to {confirmed_topic})")
+
+        elif is_topic_rejection(user_msg):
+            # User rejected - stay on current topic
+            current = get_current_topic(session_key)
+            clear_pending_topic(session_key)
+            logger.info(f"[VIC TopicChange] User REJECTED switch, staying on: {current}")
+
+            # Respond and continue with current topic
+            response_text = f"Alright, let's continue with {current}. What else would you like to know about it?"
+            add_to_history(session_key, "user", "No (stay on topic)")
+            add_to_history(session_key, "assistant", response_text)
+
+            return StreamingResponse(
+                stream_sse_response(response_text, str(uuid.uuid4())),
+                media_type="text/event-stream"
+            )
+        else:
+            # User said something else - treat as new query, clear pending
+            clear_pending_topic(session_key)
+            logger.info(f"[VIC TopicChange] User said something else, clearing pending topic")
+
+    # ==========================================================================
     # STAGE 1: FAST PATH - Keyword cache lookup for instant response (<300ms)
     # SKIP this if user said "yes" - they want the FULL story, not another teaser!
     # ==========================================================================
@@ -1924,7 +2122,46 @@ from Roman London to Victorian music halls. Would you like to hear about any par
             "validated": True,  # Pydantic validated!
         }
 
-        # CONVERSATION TRACKING: Record user query and set topic
+        # =======================================================================
+        # TOPIC CHANGE DETECTION: If switching topics, ask for confirmation
+        # This prevents the "elastic band" effect where users can't change topic
+        # =======================================================================
+        teaser_topic = teaser.title
+        teaser_topic_lower = teaser_topic.lower()
+        existing_topic_lower = existing_topic.lower() if existing_topic else ""
+
+        # Check if this is a NEW topic (not continuation of current)
+        is_new_topic = (
+            existing_topic and
+            teaser_topic_lower != existing_topic_lower and
+            teaser_topic_lower not in existing_topic_lower and
+            existing_topic_lower not in teaser_topic_lower
+        )
+
+        if is_new_topic:
+            # User is trying to change topic - ask for confirmation!
+            logger.info(f"[VIC TopicChange] Detected topic switch: '{existing_topic}' → '{teaser_topic}'")
+
+            # Set pending topic
+            set_pending_topic(session_key, teaser_topic, user_msg)
+
+            # Generate confirmation question
+            response_text = f"Ah, {teaser_topic}! Shall we leave {existing_topic} behind and explore {teaser_topic} instead?"
+
+            # Track in history
+            add_to_history(session_key, "user", user_msg)
+            add_to_history(session_key, "assistant", response_text)
+
+            _last_request_debug["stage"] = "Stage1-TopicChangeConfirmation"
+            _last_request_debug["pending_topic"] = teaser_topic
+            _last_request_debug["current_topic"] = existing_topic
+
+            return StreamingResponse(
+                stream_sse_response(response_text, str(uuid.uuid4())),
+                media_type="text/event-stream"
+            )
+
+        # CONVERSATION TRACKING: Record user query and set topic (normal flow)
         add_to_history(session_key, "user", user_msg)
         set_current_topic(session_key, teaser.title)
 

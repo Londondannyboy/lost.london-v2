@@ -147,6 +147,70 @@ curl https://vic-agent-production.up.railway.app/debug/full | jq '.session_state
 curl https://vic-agent-production.up.railway.app/debug/last-request | jq
 ```
 
+### Topic Change Confirmation (Jan 2026)
+
+**Problem Solved:** The TSCA pattern worked TOO well - users felt "elastic-banded" back to the original topic when they tried to change subjects. They couldn't intentionally switch to a new topic.
+
+**Solution:** When VIC detects a new topic that differs from the current anchor, instead of immediately switching or ignoring it, VIC asks for confirmation:
+
+```
+User: "Royal Aquarium" → VIC talks about Royal Aquarium
+User: "What about Tower Bridge?"
+VIC: "Ah, Tower Bridge! Shall we leave Royal Aquarium behind and explore Tower Bridge instead?"
+User: "Yes"
+VIC: [Switches anchor to Tower Bridge, continues from there]
+```
+
+### Implementation Details
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| `SessionContext.pending_topic` | agent.py:91 | New topic awaiting confirmation |
+| `SessionContext.pending_topic_query` | agent.py:92 | Original query that triggered change |
+| `is_topic_change_request()` | agent.py:240 | Detect explicit topic change patterns |
+| `set_pending_topic()` | agent.py:300 | Store pending topic for confirmation |
+| `confirm_pending_topic()` | agent.py:322 | Switch anchor when user confirms |
+| `is_topic_confirmation()` | agent.py:336 | Detect "yes" to topic change |
+| `is_topic_rejection()` | agent.py:344 | Detect "no, stay on topic" |
+
+### Topic Change Detection Patterns
+
+```python
+TOPIC_CHANGE_PATTERNS = [
+    r"what about (.+?)(?:\?|$)",
+    r"tell me about (.+?) instead",
+    r"let'?s talk about (.+?)(?:\?|$)",
+    r"how about (.+?)(?:\?|$)",
+    r"switch to (.+?)(?:\?|$)",
+    r"can you tell me about (.+?)(?:\?|$)",
+]
+```
+
+### Flow Diagram
+
+```
+User mentions new topic
+         ↓
+Is there an existing topic anchor?
+    No → Normal flow, set topic
+    Yes → Is new topic different?
+           No → Continue with current topic
+           Yes → ASK FOR CONFIRMATION
+                      ↓
+         "Shall we leave X and explore Y?"
+                      ↓
+         User says "Yes" → Switch anchor to Y
+         User says "No" → Stay on X
+         User says other → Treat as new query
+```
+
+### Debug
+
+```bash
+# Check pending topic in session state
+curl https://vic-agent-production.up.railway.app/debug/last-request | jq '.pending_topic, .current_topic'
+```
+
 ### Anti-Repetition Pattern (Jan 2026)
 
 **Problem Solved:** VIC was repeating the same facts across turns. User asks about Royal Aquarium → VIC says "built in 11 months" → User says "yes" → VIC says "built in 11 months" again.

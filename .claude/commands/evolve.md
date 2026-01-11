@@ -46,6 +46,19 @@ Run this after fixing a bug or completing a feature to improve the system.
 **Fix:** Updated CLM to call the function which handles Keegan family special cases.
 **Rule:** Always use centralized functions for repeated logic (DRY principle applies to AI coding too).
 
+### Jan 10, 2026: Topic Change "Elastic Band" Effect
+**Bug:** TSCA worked TOO well - users felt "elastic-banded" back to original topic when trying to change.
+**Fix:** Added topic change confirmation flow:
+1. Detect when user mentions new topic (different from current anchor)
+2. Ask "Shall we leave X and explore Y instead?"
+3. Wait for user confirmation before switching anchor
+**Files Changed:**
+- `agent.py`: Added `pending_topic`, `is_topic_change_request()`, confirmation handling
+- `TopicChangeConfirmation.tsx`: HITL UI component near VIC avatar
+- `page.tsx`: Detect topic changes in voice messages, render confirmation
+**Reference Added:** `CLAUDE.md` updated with Topic Change Confirmation section
+**Rule:** When context anchoring is too strong, add explicit user confirmation for context switches.
+
 ---
 
 ## How to Use This
