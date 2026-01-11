@@ -440,14 +440,16 @@ export default function Home() {
     console.log(`[VIC] Voice ${role}: ${text.slice(0, 50)}...`);
 
     // Check if VIC is asking about topic change (assistant message)
+    // Use setTimeout to defer state update and avoid React #185 error
     if (role === "assistant") {
       const topicChange = detectTopicChangeRequest(text);
       if (topicChange.isTopicChange && topicChange.currentTopic && topicChange.newTopic) {
-        console.log(`[VIC] Topic change detected: ${topicChange.currentTopic} → ${topicChange.newTopic}`);
-        setPendingTopicChange({
-          currentTopic: topicChange.currentTopic,
-          newTopic: topicChange.newTopic,
-        });
+        const currentTopic = topicChange.currentTopic;
+        const newTopic = topicChange.newTopic;
+        console.log(`[VIC] Topic change detected: ${currentTopic} → ${newTopic}`);
+        setTimeout(() => {
+          setPendingTopicChange({ currentTopic, newTopic });
+        }, 0);
       }
     }
 
