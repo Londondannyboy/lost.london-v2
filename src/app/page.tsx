@@ -595,12 +595,15 @@ export default function Home() {
       // TopicContext is rendered directly (it includes its own Librarian header)
       if (uiComponent === "TopicContext") {
         // Set Rosie's articles to announce (for dual-voice prototype)
+        // Defer state update to avoid React #185 error
         if (uiData?.articles && uiData.articles.length > 0) {
-          setRosieArticles({
-            query: uiData.query || "your topic",
-            count: uiData.articles.length,
-            titles: uiData.articles.map((a: any) => a.title || a.name).slice(0, 3),
-          });
+          setTimeout(() => {
+            setRosieArticles({
+              query: uiData.query || "your topic",
+              count: uiData.articles.length,
+              titles: uiData.articles.map((a: any) => a.title || a.name).slice(0, 3),
+            });
+          }, 0);
         }
 
         return (
