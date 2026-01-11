@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 
 interface ArticleCardProps {
   id: string;
@@ -31,14 +31,21 @@ export function ArticleCard({
 }: ArticleCardProps) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const imageLoadedRef = useRef(false);
+  const imageErrorRef = useRef(false);
 
-  // Safe handlers - defer state updates to avoid React #185 error
+  // Safe handlers - use refs to prevent multiple calls
   const handleImageLoad = useCallback(() => {
-    // Use setTimeout to avoid "Cannot update during render" error
-    setTimeout(() => setImageLoaded(true), 0);
+    if (!imageLoadedRef.current) {
+      imageLoadedRef.current = true;
+      setImageLoaded(true);
+    }
   }, []);
   const handleImageError = useCallback(() => {
-    setTimeout(() => setImageError(true), 0);
+    if (!imageErrorRef.current) {
+      imageErrorRef.current = true;
+      setImageError(true);
+    }
   }, []);
 
   // Beautiful fallback gradients when no image
